@@ -1,66 +1,187 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+# Inventario — Backend (API)
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+API REST para el sistema de **Inventario**: gestión de productos, categorías, unidades,
+atributos, proveedores, movimientos de stock (entradas, salidas, ventas, ajustes),
+tasa de cambio, reportes y administración de usuarios.
 
-## About Laravel
+Construido con **Laravel 11** y autenticación **JWT**. Es consumido por el frontend
+React (`inventario_frontend`).
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+---
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
+## Stack
 
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
+- **PHP** ^8.2
+- **Laravel** ^11.31
+- **Autenticación:** JWT (`php-open-source-saver/jwt-auth`)
+- **Base de datos:** MySQL / MariaDB (probado con MySQL 8.3)
+- **Almacenamiento de imágenes:** disco `public` (`storage/app/public`)
 
-## Learning Laravel
+---
 
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework.
+## Requisitos
 
-You may also try the [Laravel Bootcamp](https://bootcamp.laravel.com), where you will be guided through building a modern Laravel application from scratch.
+- PHP 8.2+ con las extensiones típicas de Laravel (`pdo_mysql`, `mbstring`, `openssl`,
+  `fileinfo`, `gd` o `imagick` para imágenes, etc.)
+- Composer
+- MySQL o MariaDB
+- (Opcional) WAMP/XAMPP/Laravel Herd para entorno local en Windows
 
-If you don't feel like reading, [Laracasts](https://laracasts.com) can help. Laracasts contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
+---
 
-## Laravel Sponsors
+## Instalación
 
-We would like to extend our thanks to the following sponsors for funding Laravel development. If you are interested in becoming a sponsor, please visit the [Laravel Partners program](https://partners.laravel.com).
+```bash
+# 1. Clonar
+git clone https://github.com/revazquez1990/inventario_backend.git
+cd inventario_backend
 
-### Premium Partners
+# 2. Dependencias
+composer install
 
-- **[Vehikl](https://vehikl.com/)**
-- **[Tighten Co.](https://tighten.co)**
-- **[WebReinvent](https://webreinvent.com/)**
-- **[Kirschbaum Development Group](https://kirschbaumdevelopment.com)**
-- **[64 Robots](https://64robots.com)**
-- **[Curotec](https://www.curotec.com/services/technologies/laravel/)**
-- **[Cyber-Duck](https://cyber-duck.co.uk)**
-- **[DevSquad](https://devsquad.com/hire-laravel-developers)**
-- **[Jump24](https://jump24.co.uk)**
-- **[Redberry](https://redberry.international/laravel/)**
-- **[Active Logic](https://activelogic.com)**
-- **[byte5](https://byte5.de)**
-- **[OP.GG](https://op.gg)**
+# 3. Variables de entorno
+cp .env.example .env        # en Windows: copy .env.example .env
+php artisan key:generate
+php artisan jwt:secret       # genera JWT_SECRET en el .env
+```
 
-## Contributing
+Edita el `.env` y configura la base de datos (la plantilla viene en SQLite; cámbiala a MySQL):
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+```env
+APP_NAME=Inventario
+APP_URL=http://localhost:8000
 
-## Code of Conduct
+DB_CONNECTION=mysql
+DB_HOST=127.0.0.1
+DB_PORT=3306
+DB_DATABASE=inventario
+DB_USERNAME=root
+DB_PASSWORD=
+```
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+```bash
+# 4. Crear la base de datos 'inventario' en tu motor MySQL, luego:
+php artisan migrate --seed
 
-## Security Vulnerabilities
+# 5. Enlace del almacenamiento público (para servir imágenes en /storage)
+php artisan storage:link
 
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+# 6. Levantar el servidor de desarrollo
+php artisan serve            # http://localhost:8000
+```
 
-## License
+> **Importación de datos existentes:** si tienes un volcado SQL (`inventario.sql`), puedes
+> importarlo en lugar de correr `migrate --seed`.
 
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+---
+
+## Usuarios de prueba (seeder)
+
+| Rol         | Email                        | Contraseña  |
+|-------------|------------------------------|-------------|
+| admin       | `admin@inventario.local`     | `admin123`  |
+| almacenero  | `almacenero@inventario.local`| `almacen123`|
+
+> Los endpoints marcados como **admin** requieren el rol `admin`.
+
+---
+
+## Autenticación
+
+API stateless con **JWT**. Flujo:
+
+1. `POST /api/v1/auth/login` con `{ "email", "password" }` → devuelve el token.
+2. Enviar el token en cada petición protegida:
+   ```
+   Authorization: Bearer <token>
+   ```
+3. `POST /api/v1/auth/refresh` para renovar y `POST /api/v1/auth/logout` para invalidar.
+
+Middlewares usados: `auth:api`, `active_user` (usuario activo) y `role:admin`.
+
+---
+
+## Endpoints
+
+Prefijo base: **`/api/v1`**
+
+### Salud
+- `GET /health` — estado del servicio (público)
+
+### Auth
+- `POST /auth/login`
+- `POST /auth/refresh`
+- `POST /auth/logout` 🔒
+- `GET  /auth/me` 🔒
+
+### Usuarios 🔒 admin
+- `GET /users`, `POST /users`, `GET /users/{user}`, `PUT /users/{user}`
+- `PATCH /users/{user}/status`
+
+### Catálogo 🔒
+- **Categorías:** `GET/POST /categories`, `GET/PUT /categories/{category}`, `DELETE` (admin)
+- **Unidades:** `GET /units`, `POST/PUT/DELETE` (admin)
+- **Atributos:** `GET /attributes` (+ `POST/PUT/DELETE` admin) y `…/{attribute}/values`
+- **Proveedores:** `GET/POST /suppliers`, `GET/PUT /suppliers/{supplier}`, `DELETE` (admin)
+
+### Productos 🔒
+- `GET /products`, `POST /products`
+- `GET /products/{product}`, `PUT|POST /products/{product}`, `DELETE` (admin)
+- `GET /products/{product}/movements`
+- `GET /products/import-template`, `POST /products/import/preview`, `POST /products/import`
+
+> La creación/edición acepta `multipart/form-data` con el campo `image` (máx. 5 MB).
+> En las respuestas, `image_url` es una **ruta relativa** (`/storage/products/…`).
+
+### Configuración 🔒
+- **Tasa de cambio:** `GET /exchange-rate/today`, `GET /exchange-rate`, `POST /exchange-rate`
+- **Impuesto:** `GET /settings/tax-rate`, `PUT /settings/tax-rate` (admin)
+- **Negocio:** `GET /settings/business`, `PUT /settings/business` (admin)
+
+### Movimientos de stock 🔒
+- `GET /movements`, `GET /movements/{movement}`
+- `POST /movements/entrada`, `/salida`, `/venta`
+- `POST /movements/ajuste` (admin)
+- `POST /movements/{movement}/anular`
+
+### Reportes / Dashboard 🔒
+- `GET /dashboard/kpis`, `GET /dashboard/sales`
+- `GET /reports/low-stock`, `GET /reports/movements`
+
+🔒 = requiere `Authorization: Bearer <token>`
+
+---
+
+## Imágenes y almacenamiento
+
+Las imágenes de productos se guardan en `storage/app/public/products` y se sirven vía el
+symlink `public/storage` (creado con `php artisan storage:link`). El campo `image_url` de la
+API es **relativo** (`/storage/...`) para funcionar en cualquier origen/host sin depender de
+`APP_URL`.
+
+---
+
+## Despliegue en red local (LAN / WiFi)
+
+El frontend y la API se sirven en el **mismo origen** usando un reverse proxy de Apache que
+reenvía `/api` y `/storage` al backend (así se evita CORS). El paso a paso completo para
+montarlo en otra máquina está documentado en el runbook de migración
+(`inventario-migracion/RUNBOOK.md`), que también incluye cómo importar la base de datos y
+configurar los virtual hosts.
+
+---
+
+## Pruebas
+
+```bash
+php artisan test
+```
+
+---
+
+## Notas
+
+- **No** se versiona el archivo `.env` (contiene `APP_KEY`, `JWT_SECRET` y credenciales).
+- **No** se versiona `vendor/` ni la base de datos; usa `composer install` y un volcado SQL.
+- CORS: configurado en `config/cors.php`. Para acceso por IP en LAN, agrega el origen
+  correspondiente a `allowed_origins` (o sírvelo en el mismo origen vía proxy).
