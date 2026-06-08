@@ -27,7 +27,7 @@ class ProductController extends Controller
     public function index(Request $request): JsonResponse
     {
         $products = Product::query()
-            ->with(['category', 'unit'])
+            ->with(['category', 'unit', 'attributeValues.attribute'])
             ->when($request->filled('search'), function ($q) use ($request) {
                 $search = $request->string('search')->toString();
                 $q->where(function ($q) use ($search) {
@@ -56,13 +56,17 @@ class ProductController extends Controller
         $initialQty = (int) ($data['quantity'] ?? 0);
         $supplierId = ($data['supplier_id'] ?? null) ? (int) $data['supplier_id'] : null;
         unset($data['supplier_id']);
+        $attributeValueIds = $data['attribute_value_ids'] ?? [];
+        unset($data['attribute_value_ids']);
 
         $data['quantity'] = 0;
         $data['status'] ??= EntityStatus::ACTIVE;
 
         $product = null;
-        DB::transaction(function () use ($data, $initialQty, $supplierId, $request, &$product) {
+        DB::transaction(function () use ($data, $initialQty, $supplierId, $attributeValueIds, $request, &$product) {
             $product = Product::query()->create($data);
+
+            $product->attributeValues()->sync($attributeValueIds);
 
             if ($initialQty > 0) {
                 $this->movementService->create(MovementType::ENTRADA, [
@@ -77,12 +81,12 @@ class ProductController extends Controller
             }
         });
 
-        return response()->json(['data' => $this->serializeProduct($product->refresh()->load(['category', 'unit']))], 201);
+        return response()->json(['data' => $this->serializeProduct($product->refresh()->load(['category', 'unit', 'attributeValues.attribute']))], 201);
     }
 
     public function show(Product $product): JsonResponse
     {
-        return response()->json(['data' => $this->serializeProduct($product->load(['category', 'unit']))]);
+        return response()->json(['data' => $this->serializeProduct($product->load(['category', 'unit', 'attributeValues.attribute']))]);
     }
 
     public function movements(Product $product): JsonResponse
@@ -122,7 +126,13 @@ class ProductController extends Controller
             'reference' => ['nullable', 'string', 'max:160'],
             'quantity' => ['sometimes', 'integer', 'min:0'],
             'status' => ['sometimes', Rule::in(['active', 'inactive'])],
+            'attribute_value_ids' => ['nullable', 'array'],
+            'attribute_value_ids.*' => ['integer', Rule::exists('attribute_value', 'id')],
         ]);
+
+        $syncAttributeValues = $request->boolean('manage_variety');
+        $attributeValueIds = $data['attribute_value_ids'] ?? [];
+        unset($data['attribute_value_ids']);
 
         if ($request->hasFile('image')) {
             $request->validate(['image' => ['image', 'max:5120']]);
@@ -134,7 +144,11 @@ class ProductController extends Controller
 
         $product->fill($data)->save();
 
-        return response()->json(['data' => $this->serializeProduct($product->refresh()->load(['category', 'unit']))]);
+        if ($syncAttributeValues) {
+            $product->attributeValues()->sync($attributeValueIds);
+        }
+
+        return response()->json(['data' => $this->serializeProduct($product->refresh()->load(['category', 'unit', 'attributeValues.attribute']))]);
     }
 
     public function delete(Product $product): JsonResponse
@@ -276,6 +290,8 @@ class ProductController extends Controller
                 'integer',
                 Rule::exists('supplier', 'id'),
             ],
+            'attribute_value_ids' => ['nullable', 'array'],
+            'attribute_value_ids.*' => ['integer', Rule::exists('attribute_value', 'id')],
         ]);
     }
 
@@ -293,6 +309,13 @@ class ProductController extends Controller
             'image_url' => $product->image ? Storage::disk('public')->url($product->image) : null,
             'status' => $product->status?->value ?? EntityStatus::ACTIVE->value,
             'created_at' => $product->created_at?->toDateTimeString(),
+            'attribute_values' => $product->relationLoaded('attributeValues')
+                ? $product->attributeValues->map(fn ($value) => [
+                    'id' => $value->id,
+                    'value' => $value->value,
+                    'attribute' => $value->attribute?->name,
+                ])->values()
+                : [],
         ];
     }
 

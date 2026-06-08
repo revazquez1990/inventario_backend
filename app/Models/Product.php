@@ -6,6 +6,7 @@ use App\Enums\EntityStatus;
 use App\Models\Concerns\HasEntityStatus;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 
 class Product extends Model
 {
@@ -35,5 +36,15 @@ class Product extends Model
     public function unit(): BelongsTo
     {
         return $this->belongsTo(Unit::class);
+    }
+
+    public function attributeValues(): BelongsToMany
+    {
+        return $this->belongsToMany(
+            AttributeValue::class,
+            'product_attribute_value',
+            'product_id',
+            'attribute_value_id',
+        );
     }
 }
