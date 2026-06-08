@@ -28,7 +28,8 @@ class MovementController extends Controller
             ->when($request->filled('user_id'), fn ($q) => $q->where('created_by_user_id', $request->integer('user_id')))
             ->when($request->filled('supplier_id'), fn ($q) => $q->where('supplier_id', $request->integer('supplier_id')))
             ->when($request->filled('code'), fn ($q) => $q->where('code', 'like', '%'.$request->string('code')->toString().'%'))
-            ->latest();
+            ->orderByDesc('created_at')
+            ->orderByDesc('id');
 
         $movements = $query->paginate((int) $request->integer('per_page', 20));
 

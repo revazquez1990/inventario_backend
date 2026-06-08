@@ -120,6 +120,7 @@ class ProductController extends Controller
             'unit_id' => ['sometimes', 'integer', Rule::exists('unit', 'id')],
             'price' => ['sometimes', 'numeric', 'min:0'],
             'reference' => ['nullable', 'string', 'max:160'],
+            'variety' => ['nullable', 'string', 'max:160'],
             'quantity' => ['sometimes', 'integer', 'min:0'],
             'status' => ['sometimes', Rule::in(['active', 'inactive'])],
         ]);
@@ -269,6 +270,7 @@ class ProductController extends Controller
             'unit_id' => ['required', 'integer', Rule::exists('unit', 'id')],
             'price' => ['required', 'numeric', 'min:0'],
             'reference' => ['nullable', 'string', 'max:160'],
+            'variety' => ['nullable', 'string', 'max:160'],
             'quantity' => ['required', 'integer', 'min:0'],
             'status' => ['sometimes', Rule::in(['active', 'inactive'])],
             'supplier_id' => [
@@ -289,6 +291,7 @@ class ProductController extends Controller
             'unit' => $product->unit,
             'price' => $product->price,
             'reference' => $product->reference,
+            'variety' => $product->variety,
             'quantity' => $product->quantity,
             'image_url' => $product->image ? Storage::disk('public')->url($product->image) : null,
             'status' => $product->status?->value ?? EntityStatus::ACTIVE->value,
