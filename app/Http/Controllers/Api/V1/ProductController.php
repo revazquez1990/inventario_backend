@@ -36,7 +36,8 @@ class ProductController extends Controller
                 });
             })
             ->when($request->filled('category_id'), fn ($q) => $q->where('category_id', $request->integer('category_id')))
-            ->orderBy('name')
+            ->orderByDesc('created_at')
+            ->orderByDesc('id')
             ->get()
             ->map(fn (Product $product) => $this->serializeProduct($product))
             ->values();
