@@ -7,6 +7,7 @@ use App\Enums\UserRole;
 use App\Models\Concerns\HasEntityStatus;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use PHPOpenSourceSaver\JWTAuth\Contracts\JWTSubject;
 
@@ -53,6 +54,31 @@ class User extends Authenticatable implements JWTSubject
     public function isAdmin(): bool
     {
         return $this->role === UserRole::ADMIN;
+    }
+
+    public function warehouses(): BelongsToMany
+    {
+        return $this->belongsToMany(Warehouse::class, 'user_warehouse')->withTimestamps();
+    }
+
+    /**
+     * IDs of warehouses this user may access. Admins implicitly reach every
+     * active warehouse; almaceneros only the ones explicitly assigned.
+     *
+     * @return array<int, int>
+     */
+    public function accessibleWarehouseIds(): array
+    {
+        if ($this->isAdmin()) {
+            return Warehouse::query()->onlyActive()->pluck('id')->all();
+        }
+
+        return $this->warehouses()->pluck('warehouse.id')->all();
+    }
+
+    public function canAccessWarehouse(int $warehouseId): bool
+    {
+        return in_array($warehouseId, $this->accessibleWarehouseIds(), true);
     }
 
     public function scopeForLogin(Builder $query): Builder

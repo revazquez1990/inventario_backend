@@ -9,6 +9,7 @@ enum MovementType: string
     case VENTA = 'venta';
     case AJUSTE = 'ajuste';
     case ANULACION = 'anulacion';
+    case TRANSFERENCIA = 'transferencia';
 
     public function codePrefix(): string
     {
@@ -18,6 +19,7 @@ enum MovementType: string
             self::VENTA => 'V',
             self::AJUSTE => 'A',
             self::ANULACION => 'X',
+            self::TRANSFERENCIA => 'T',
         };
     }
 }

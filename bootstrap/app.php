@@ -16,6 +16,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'role' => \App\Http\Middleware\EnsureUserHasRole::class,
             'active_user' => \App\Http\Middleware\EnsureUserIsActive::class,
+            'warehouse' => \App\Http\Middleware\ResolveWarehouse::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {

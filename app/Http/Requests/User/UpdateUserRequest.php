@@ -27,6 +27,8 @@ class UpdateUserRequest extends FormRequest
             'password' => ['sometimes', 'string', 'min:8', 'max:72'],
             'role' => ['sometimes', 'string', Rule::in(['admin', 'almacenero'])],
             'status' => ['sometimes', 'string', Rule::in(['active', 'inactive'])],
+            'warehouse_ids' => ['sometimes', 'array'],
+            'warehouse_ids.*' => ['integer', Rule::exists('warehouse', 'id')],
         ];
     }
 }

@@ -14,9 +14,14 @@ class ReportController extends Controller
 {
     public function kpis(Request $request): JsonResponse
     {
+        $warehouseId = $this->resolvedWarehouseId($request);
         $date = $request->string('date', now('America/Bogota')->toDateString())->toString();
-        $sales = Movement::query()->where('type', 'venta')->where('status', 'activo')->whereDate('created_at', $date);
-        $movements = Movement::query()->whereDate('created_at', $date);
+        $sales = Movement::query()->where('type', 'venta')->where('status', 'activo')->whereDate('created_at', $date)
+            ->when($warehouseId !== null, fn ($q) => $q->where('warehouse_id', $warehouseId));
+        $movements = Movement::query()->whereDate('created_at', $date)
+            ->when($warehouseId !== null, fn ($q) => $q->where(function ($q) use ($warehouseId) {
+                $q->where('warehouse_id', $warehouseId)->orWhere('to_warehouse_id', $warehouseId);
+            }));
 
         return response()->json([
             'data' => [
@@ -25,18 +30,20 @@ class ReportController extends Controller
                 'sales_total_cup' => (float) (clone $sales)->sum('total_with_tax_cup'),
                 'sales_count' => (int) (clone $sales)->count(),
                 'movements_count' => (int) $movements->count(),
-                'low_stock_count' => (int) Product::query()->where('quantity', 0)->count(),
+                'low_stock_count' => $this->lowStockProducts($warehouseId)->count(),
             ],
         ]);
     }
 
     public function sales(Request $request)
     {
+        $warehouseId = $this->resolvedWarehouseId($request);
         $from = $request->string('from', now('America/Bogota')->startOfMonth()->toDateString())->toString();
         $to = $request->string('to', now('America/Bogota')->toDateString())->toString();
         $base = Movement::query()
             ->where('type', 'venta')
             ->where('status', 'activo')
+            ->when($warehouseId !== null, fn ($q) => $q->where('warehouse_id', $warehouseId))
             ->when($request->filled('user_id'), fn ($q) => $q->where('created_by_user_id', $request->integer('user_id')))
             ->whereDate('created_at', '>=', $from)
             ->whereDate('created_at', '<=', $to);
@@ -66,23 +73,20 @@ class ReportController extends Controller
             ],
             'comparison' => ['prev_total_usd' => 0, 'delta_pct' => 0],
             'by_period' => $byPeriod,
-            'top_products' => $this->topProducts($from, $to),
-            'by_user' => $this->byUser($from, $to),
-            'by_category' => $this->byCategory($from, $to),
+            'top_products' => $this->topProducts($from, $to, $warehouseId),
+            'by_user' => $this->byUser($from, $to, $warehouseId),
+            'by_category' => $this->byCategory($from, $to, $warehouseId),
         ]);
     }
 
     public function lowStock(Request $request)
     {
-        $rows = Product::query()
-            ->with(['category', 'unit'])
-            ->where('quantity', 0)
-            ->get()
+        $rows = $this->lowStockProducts($this->resolvedWarehouseId($request))
             ->map(fn (Product $product) => [
                 'id' => $product->id,
                 'code' => $product->code,
                 'name' => $product->name,
-                'quantity' => $product->quantity,
+                'quantity' => (int) ($product->quantity ?? 0),
                 'category' => $product->category?->name,
             ])
             ->values();
@@ -97,8 +101,12 @@ class ReportController extends Controller
     public function movements(Request $request, MovementController $controller)
     {
         if ($request->filled('format')) {
+            $warehouseId = $this->resolvedWarehouseId($request);
             $rows = Movement::query()
                 ->with('createdBy:id,name')
+                ->when($warehouseId !== null, fn ($q) => $q->where(function ($q) use ($warehouseId) {
+                    $q->where('warehouse_id', $warehouseId)->orWhere('to_warehouse_id', $warehouseId);
+                }))
                 ->when($request->filled('type'), fn ($q) => $q->where('type', $request->string('type')->toString()))
                 ->when($request->filled('status'), fn ($q) => $q->where('status', $request->string('status')->toString()))
                 ->when($request->filled('from'), fn ($q) => $q->whereDate('created_at', '>=', $request->date('from')))
@@ -123,13 +131,30 @@ class ReportController extends Controller
         return $controller->index($request);
     }
 
-    private function topProducts(string $from, string $to)
+    /**
+     * Products whose stock is zero in the given warehouse (or in total when null).
+     */
+    private function lowStockProducts(?int $warehouseId)
+    {
+        return Product::query()
+            ->with(['category', 'unit'])
+            ->withSum(
+                ['stocks as quantity' => fn ($q) => $warehouseId !== null ? $q->where('warehouse_id', $warehouseId) : $q],
+                'quantity',
+            )
+            ->get()
+            ->filter(fn (Product $product) => (int) ($product->quantity ?? 0) === 0)
+            ->values();
+    }
+
+    private function topProducts(string $from, string $to, ?int $warehouseId = null)
     {
         return DB::table('movement_item')
             ->join('movement', 'movement.id', '=', 'movement_item.movement_id')
             ->join('product', 'product.id', '=', 'movement_item.product_id')
             ->where('movement.type', 'venta')
             ->where('movement.status', 'activo')
+            ->when($warehouseId !== null, fn ($q) => $q->where('movement.warehouse_id', $warehouseId))
             ->whereDate('movement.created_at', '>=', $from)
             ->whereDate('movement.created_at', '<=', $to)
             ->selectRaw('product.id, product.code, product.name, SUM(movement_item.quantity) as quantity, SUM(movement_item.subtotal_with_tax_usd) as total_usd')
@@ -139,12 +164,13 @@ class ReportController extends Controller
             ->get();
     }
 
-    private function byUser(string $from, string $to)
+    private function byUser(string $from, string $to, ?int $warehouseId = null)
     {
         return DB::table('movement')
             ->join('user', 'user.id', '=', 'movement.created_by_user_id')
             ->where('movement.type', 'venta')
             ->where('movement.status', 'activo')
+            ->when($warehouseId !== null, fn ($q) => $q->where('movement.warehouse_id', $warehouseId))
             ->whereDate('movement.created_at', '>=', $from)
             ->whereDate('movement.created_at', '<=', $to)
             ->selectRaw('user.id as user_id, user.name, COUNT(*) as count, SUM(movement.total_with_tax_usd) as total_usd')
@@ -153,7 +179,7 @@ class ReportController extends Controller
             ->get();
     }
 
-    private function byCategory(string $from, string $to)
+    private function byCategory(string $from, string $to, ?int $warehouseId = null)
     {
         return DB::table('movement_item')
             ->join('movement', 'movement.id', '=', 'movement_item.movement_id')
@@ -161,6 +187,7 @@ class ReportController extends Controller
             ->join('category', 'category.id', '=', 'product.category_id')
             ->where('movement.type', 'venta')
             ->where('movement.status', 'activo')
+            ->when($warehouseId !== null, fn ($q) => $q->where('movement.warehouse_id', $warehouseId))
             ->whereDate('movement.created_at', '>=', $from)
             ->whereDate('movement.created_at', '<=', $to)
             ->selectRaw('category.id as category_id, category.name, SUM(movement_item.quantity) as count, SUM(movement_item.subtotal_with_tax_usd) as total_usd')

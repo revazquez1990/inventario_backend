@@ -20,9 +20,9 @@ class MovementService
     ) {
     }
 
-    public function create(MovementType $type, array $data, User $user): Movement
+    public function create(MovementType $type, array $data, User $user, int $warehouseId, ?int $toWarehouseId = null): Movement
     {
-        return DB::transaction(function () use ($type, $data, $user) {
+        return DB::transaction(function () use ($type, $data, $user, $warehouseId, $toWarehouseId) {
             $rate = ExchangeRate::query()->where('rate_date', now('America/Bogota')->toDateString())->orderByDesc('created_at')->first()
                 ?? ExchangeRate::query()->orderByDesc('rate_date')->orderByDesc('created_at')->first();
             $exchange = $rate ? (float) $rate->usd_to_cup : 1.0;
@@ -32,8 +32,16 @@ class MovementService
 
             foreach ($data['items'] as $line) {
                 $quantity = (int) $line['quantity'];
-                $delta = $this->stockDelta($type, $quantity);
-                $product = $this->stockService->lockAndApply((int) $line['product_id'], $delta);
+                $productId = (int) $line['product_id'];
+
+                if ($type === MovementType::TRANSFERENCIA) {
+                    $this->stockService->lockAndApply($productId, $warehouseId, -abs($quantity));
+                    $this->stockService->lockAndApply($productId, (int) $toWarehouseId, abs($quantity));
+                } else {
+                    $this->stockService->lockAndApply($productId, $warehouseId, $this->stockDelta($type, $quantity));
+                }
+
+                $product = Product::query()->whereKey($productId)->firstOrFail();
                 $price = (float) ($line['unit_price_with_tax_usd'] ?? $product->price);
                 $calc = $this->calculateLine($price, abs($quantity), $taxRate, $exchange);
 
@@ -48,6 +56,8 @@ class MovementService
                 'type' => $type,
                 'adjustment_subtype' => $data['adjustment_subtype'] ?? null,
                 'code' => $this->codeGenerator->next($type),
+                'warehouse_id' => $warehouseId,
+                'to_warehouse_id' => $toWarehouseId,
                 'exchange_rate_snapshot' => $exchange,
                 'exchange_rate_id' => $rate?->id,
                 'tax_rate_snapshot' => $taxRate,
@@ -91,7 +101,12 @@ class MovementService
             }
 
             foreach ($original->items as $item) {
-                $this->stockService->lockAndApply($item->product_id, -$this->stockDelta($original->type, $item->quantity));
+                if ($original->type === MovementType::TRANSFERENCIA) {
+                    $this->stockService->lockAndApply($item->product_id, $original->warehouse_id, abs($item->quantity));
+                    $this->stockService->lockAndApply($item->product_id, (int) $original->to_warehouse_id, -abs($item->quantity));
+                } else {
+                    $this->stockService->lockAndApply($item->product_id, $original->warehouse_id, -$this->stockDelta($original->type, $item->quantity));
+                }
             }
 
             $original->forceFill([
@@ -104,6 +119,8 @@ class MovementService
             $void = Movement::query()->create([
                 'type' => MovementType::ANULACION,
                 'code' => $this->codeGenerator->next(MovementType::ANULACION),
+                'warehouse_id' => $original->warehouse_id,
+                'to_warehouse_id' => $original->to_warehouse_id,
                 'exchange_rate_snapshot' => $original->exchange_rate_snapshot,
                 'exchange_rate_id' => $original->exchange_rate_id,
                 'tax_rate_snapshot' => $original->tax_rate_snapshot,
@@ -136,7 +153,7 @@ class MovementService
             MovementType::ENTRADA => abs($quantity),
             MovementType::SALIDA, MovementType::VENTA => -abs($quantity),
             MovementType::AJUSTE => $quantity,
-            MovementType::ANULACION => 0,
+            MovementType::ANULACION, MovementType::TRANSFERENCIA => 0,
         };
     }
 

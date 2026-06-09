@@ -7,6 +7,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Auth\LoginRequest;
 use App\Http\Requests\Auth\RefreshTokenRequest;
 use App\Models\User;
+use App\Models\Warehouse;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
@@ -115,6 +116,10 @@ class AuthController extends Controller
             'email' => $user->email,
             'role' => $user->role->value,
             'status' => $user->status->value,
+            'warehouses' => Warehouse::query()
+                ->whereIn('id', $user->accessibleWarehouseIds())
+                ->orderBy('name')
+                ->get(['id', 'name']),
         ];
     }
 

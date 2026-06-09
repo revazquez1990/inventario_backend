@@ -7,6 +7,7 @@ use App\Http\Controllers\Api\V1\MovementController;
 use App\Http\Controllers\Api\V1\ProductController;
 use App\Http\Controllers\Api\V1\ReportController;
 use App\Http\Controllers\Api\V1\UserController;
+use App\Http\Controllers\Api\V1\WarehouseController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/health', fn () => ['status' => 'ok', 'time' => now()->toIso8601String()]);
@@ -27,9 +28,16 @@ Route::middleware(['auth:api', 'active_user', 'role:admin'])->group(function () 
     Route::get('/users/{user}', [UserController::class, 'show']);
     Route::put('/users/{user}', [UserController::class, 'update']);
     Route::patch('/users/{user}/status', [UserController::class, 'updateStatus']);
+
+    Route::post('/warehouses', [WarehouseController::class, 'store']);
+    Route::get('/warehouses/{warehouse}', [WarehouseController::class, 'show']);
+    Route::put('/warehouses/{warehouse}', [WarehouseController::class, 'update']);
+    Route::delete('/warehouses/{warehouse}', [WarehouseController::class, 'delete']);
 });
 
-Route::middleware(['auth:api', 'active_user'])->group(function () {
+Route::middleware(['auth:api', 'active_user', 'warehouse'])->group(function () {
+    Route::get('/warehouses', [WarehouseController::class, 'index']);
+
     Route::get('/categories', [CatalogController::class, 'categories']);
     Route::post('/categories', [CatalogController::class, 'storeCategory']);
     Route::get('/categories/{category}', fn (\App\Models\Category $category) => ['data' => $category]);
@@ -80,6 +88,7 @@ Route::middleware(['auth:api', 'active_user'])->group(function () {
     Route::post('/movements/salida', [MovementController::class, 'salida']);
     Route::post('/movements/venta', [MovementController::class, 'venta']);
     Route::post('/movements/ajuste', [MovementController::class, 'ajuste'])->middleware('role:admin');
+    Route::post('/movements/transferencia', [MovementController::class, 'transferencia']);
     Route::post('/movements/{movement}/anular', [MovementController::class, 'anular'])->whereNumber('movement');
 
     Route::get('/dashboard/kpis', [ReportController::class, 'kpis']);

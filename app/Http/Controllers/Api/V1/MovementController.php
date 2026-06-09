@@ -19,8 +19,13 @@ class MovementController extends Controller
 
     public function index(Request $request): JsonResponse
     {
+        $warehouseId = $this->resolvedWarehouseId($request);
+
         $query = Movement::query()
-            ->with(['createdBy:id,name,email,role,status', 'supplier', 'items.product'])
+            ->with(['createdBy:id,name,email,role,status', 'supplier', 'warehouse:id,name', 'toWarehouse:id,name', 'items.product'])
+            ->when($warehouseId !== null, fn ($q) => $q->where(function ($q) use ($warehouseId) {
+                $q->where('warehouse_id', $warehouseId)->orWhere('to_warehouse_id', $warehouseId);
+            }))
             ->when($request->filled('type'), fn ($q) => $q->where('type', $request->string('type')->toString()))
             ->when($request->filled('status'), fn ($q) => $q->where('status', $request->string('status')->toString()))
             ->when($request->filled('from'), fn ($q) => $q->whereDate('created_at', '>=', $request->date('from')))
@@ -46,7 +51,7 @@ class MovementController extends Controller
 
     public function show(Movement $movement): JsonResponse
     {
-        return response()->json(['data' => $this->serializeMovement($movement->load(['createdBy', 'voidedBy', 'supplier', 'items.product']))]);
+        return response()->json(['data' => $this->serializeMovement($movement->load(['createdBy', 'voidedBy', 'supplier', 'warehouse:id,name', 'toWarehouse:id,name', 'items.product']))]);
     }
 
     public function entrada(Request $request): JsonResponse
@@ -99,20 +104,69 @@ class MovementController extends Controller
         return $this->createMovementResponse($request, MovementType::AJUSTE, $data);
     }
 
+    public function transferencia(Request $request): JsonResponse
+    {
+        $originId = $this->resolvedWarehouseId($request);
+        if ($originId === null) {
+            return $this->warehouseRequired();
+        }
+
+        $data = $request->validate([
+            'to_warehouse_id' => ['required', 'integer', Rule::exists('warehouse', 'id')],
+            'reason' => ['nullable', 'string'],
+            'items' => ['required', 'array', 'min:1'],
+            'items.*.product_id' => ['required', 'integer', Rule::exists('product', 'id')],
+            'items.*.quantity' => ['required', 'integer', 'min:1'],
+        ]);
+
+        $toWarehouseId = (int) $data['to_warehouse_id'];
+
+        if ($toWarehouseId === $originId) {
+            return response()->json([
+                'error' => ['code' => 'INVALID_TRANSFER', 'message' => 'El almacén destino debe ser distinto del origen.'],
+            ], 422);
+        }
+
+        if (! $request->user()->canAccessWarehouse($toWarehouseId)) {
+            return response()->json([
+                'error' => ['code' => 'FORBIDDEN', 'message' => 'No tienes acceso al almacén destino.'],
+            ], 403);
+        }
+
+        $movement = $this->movementService->create(MovementType::TRANSFERENCIA, $data, $request->user(), $originId, $toWarehouseId);
+
+        return response()->json(['data' => $this->serializeMovement($movement->load(['items.product', 'createdBy', 'warehouse:id,name', 'toWarehouse:id,name']))], 201);
+    }
+
     public function anular(Request $request, Movement $movement): JsonResponse
     {
         $data = $request->validate(['reason_void' => ['required', 'string', 'min:5']]);
 
         $voidMovement = $this->movementService->void($movement, $request->user(), $data['reason_void']);
 
-        return response()->json(['data' => $this->serializeMovement($voidMovement->load(['items.product', 'createdBy']))], 201);
+        return response()->json(['data' => $this->serializeMovement($voidMovement->load(['items.product', 'createdBy', 'warehouse:id,name', 'toWarehouse:id,name']))], 201);
     }
 
     private function createMovementResponse(Request $request, MovementType $type, array $data): JsonResponse
     {
-        $movement = $this->movementService->create($type, $data, $request->user());
+        $warehouseId = $this->resolvedWarehouseId($request);
+        if ($warehouseId === null) {
+            return $this->warehouseRequired();
+        }
 
-        return response()->json(['data' => $this->serializeMovement($movement->load(['items.product', 'createdBy', 'supplier']))], 201);
+        $movement = $this->movementService->create($type, $data, $request->user(), $warehouseId);
+
+        return response()->json(['data' => $this->serializeMovement($movement->load(['items.product', 'createdBy', 'supplier', 'warehouse:id,name', 'toWarehouse:id,name']))], 201);
+    }
+
+    private function warehouseRequired(): JsonResponse
+    {
+        return response()->json([
+            'error' => [
+                'code' => 'WAREHOUSE_REQUIRED',
+                'message' => 'Selecciona un almacén concreto para registrar el movimiento.',
+            ],
+        ], 422);
     }
 
     private function serializeMovement(Movement $movement): array
@@ -127,6 +181,8 @@ class MovementController extends Controller
             'tax_rate_snapshot' => $movement->tax_rate_snapshot,
             'reason' => $movement->reason,
             'reason_void' => $movement->reason_void,
+            'warehouse' => $movement->warehouse ? ['id' => $movement->warehouse->id, 'name' => $movement->warehouse->name] : null,
+            'to_warehouse' => $movement->toWarehouse ? ['id' => $movement->toWarehouse->id, 'name' => $movement->toWarehouse->name] : null,
             'supplier' => $movement->supplier ? ['id' => $movement->supplier->id, 'name' => $movement->supplier->name] : null,
             'created_by' => $movement->createdBy ? ['id' => $movement->createdBy->id, 'name' => $movement->createdBy->name, 'email' => $movement->createdBy->email] : null,
             'voided_by' => $movement->voidedBy ? ['id' => $movement->voidedBy->id, 'name' => $movement->voidedBy->name, 'email' => $movement->voidedBy->email] : null,

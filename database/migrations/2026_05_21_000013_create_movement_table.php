@@ -10,7 +10,7 @@ return new class extends Migration
     {
         Schema::create('movement', function (Blueprint $table) {
             $table->id();
-            $table->enum('type', ['entrada', 'salida', 'venta', 'ajuste', 'anulacion'])->index();
+            $table->enum('type', ['entrada', 'salida', 'venta', 'ajuste', 'anulacion', 'transferencia'])->index();
             $table->enum('adjustment_subtype', ['merma', 'rotura', 'conteo_fisico'])->nullable();
             $table->string('code', 20)->unique();
             $table->enum('status', ['activo', 'anulado'])->default('activo')->index();
