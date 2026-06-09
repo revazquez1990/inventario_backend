@@ -5,6 +5,7 @@ namespace Database\Seeders;
 use App\Enums\EntityStatus;
 use App\Enums\UserRole;
 use App\Models\User;
+use App\Models\Warehouse;
 use Illuminate\Database\Seeder;
 
 class UserSeeder extends Seeder
@@ -21,7 +22,7 @@ class UserSeeder extends Seeder
             ],
         );
 
-        User::query()->updateOrCreate(
+        $almacenero = User::query()->updateOrCreate(
             ['email' => 'almacenero@inventario.local'],
             [
                 'name' => 'Almacenero Demo',
@@ -30,5 +31,10 @@ class UserSeeder extends Seeder
                 'status' => EntityStatus::ACTIVE,
             ],
         );
+
+        $principal = Warehouse::query()->where('code', 'PRINCIPAL')->first();
+        if ($principal) {
+            $almacenero->warehouses()->syncWithoutDetaching([$principal->id]);
+        }
     }
 }

@@ -1,0 +1,44 @@
+<?php
+
+namespace App\Models;
+
+use App\Enums\EntityStatus;
+use App\Models\Concerns\HasEntityStatus;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+
+class Warehouse extends Model
+{
+    use HasEntityStatus;
+
+    protected $table = 'warehouse';
+
+    protected $fillable = [
+        'name', 'code', 'address', 'status',
+    ];
+
+    protected function casts(): array
+    {
+        return [
+            'status' => EntityStatus::class,
+        ];
+    }
+
+    public function products(): BelongsToMany
+    {
+        return $this->belongsToMany(Product::class, 'product_warehouse')
+            ->withPivot('quantity')
+            ->withTimestamps();
+    }
+
+    public function users(): BelongsToMany
+    {
+        return $this->belongsToMany(User::class, 'user_warehouse')->withTimestamps();
+    }
+
+    public function stocks(): HasMany
+    {
+        return $this->hasMany(Stock::class);
+    }
+}

@@ -8,15 +8,11 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::create('product', function (Blueprint $table) {
+        Schema::create('warehouse', function (Blueprint $table) {
             $table->id();
-            $table->string('code', 60)->unique();
             $table->string('name', 160);
-            $table->foreignId('category_id')->constrained('category');
-            $table->foreignId('unit_id')->constrained('unit');
-            $table->decimal('price', 12, 2)->default(0);
-            $table->string('reference', 160)->nullable();
-            $table->string('image')->nullable();
+            $table->string('code', 60)->nullable()->unique();
+            $table->string('address', 200)->nullable();
             $table->enum('status', ['active', 'inactive', 'deleted'])->default('active')->index();
             $table->timestamps();
         });
@@ -24,6 +20,6 @@ return new class extends Migration
 
     public function down(): void
     {
-        Schema::dropIfExists('product');
+        Schema::dropIfExists('warehouse');
     }
 };

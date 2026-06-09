@@ -7,6 +7,7 @@ use App\Models\Concerns\HasEntityStatus;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Product extends Model
 {
@@ -16,7 +17,7 @@ class Product extends Model
 
     protected $fillable = [
         'code', 'name', 'category_id', 'unit_id',
-        'price', 'reference', 'quantity', 'image', 'status',
+        'price', 'reference', 'image', 'status',
     ];
 
     protected function casts(): array
@@ -24,7 +25,6 @@ class Product extends Model
         return [
             'status' => EntityStatus::class,
             'price' => 'decimal:2',
-            'quantity' => 'integer',
         ];
     }
 
@@ -46,5 +46,17 @@ class Product extends Model
             'product_id',
             'attribute_value_id',
         );
+    }
+
+    public function stocks(): HasMany
+    {
+        return $this->hasMany(Stock::class);
+    }
+
+    public function warehouses(): BelongsToMany
+    {
+        return $this->belongsToMany(Warehouse::class, 'product_warehouse')
+            ->withPivot('quantity')
+            ->withTimestamps();
     }
 }

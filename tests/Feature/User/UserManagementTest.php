@@ -4,6 +4,7 @@ namespace Tests\Feature\User;
 
 use App\Enums\EntityStatus;
 use App\Models\User;
+use App\Models\Warehouse;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -14,6 +15,7 @@ class UserManagementTest extends TestCase
     public function test_admin_can_create_list_update_and_delete_user_logically(): void
     {
         $admin = User::factory()->admin()->create();
+        $warehouse = Warehouse::query()->create(['name' => 'Almacén Norte', 'status' => EntityStatus::ACTIVE]);
 
         $created = $this->actingAs($admin, 'api')
             ->postJson('/api/v1/users', [
@@ -21,10 +23,12 @@ class UserManagementTest extends TestCase
                 'email' => 'norte@inventario.local',
                 'password' => 'almacen123',
                 'role' => 'almacenero',
+                'warehouse_ids' => [$warehouse->id],
             ])
             ->assertCreated()
             ->assertJsonPath('data.email', 'norte@inventario.local')
-            ->assertJsonPath('data.status', 'active');
+            ->assertJsonPath('data.status', 'active')
+            ->assertJsonPath('data.warehouses.0.id', $warehouse->id);
 
         $userId = $created->json('data.id');
 

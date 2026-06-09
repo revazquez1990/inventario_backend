@@ -23,6 +23,8 @@ class StoreUserRequest extends FormRequest
             'password' => ['required', 'string', 'min:8', 'max:72'],
             'role' => ['required', 'string', Rule::in(['admin', 'almacenero'])],
             'status' => ['sometimes', 'string', Rule::in(['active', 'inactive'])],
+            'warehouse_ids' => ['required_if:role,almacenero', 'array'],
+            'warehouse_ids.*' => ['integer', Rule::exists('warehouse', 'id')],
         ];
     }
 }

@@ -26,8 +26,14 @@ class ProductController extends Controller
 
     public function index(Request $request): JsonResponse
     {
+        $warehouseId = $this->resolvedWarehouseId($request);
+
         $products = Product::query()
             ->with(['category', 'unit', 'attributeValues.attribute'])
+            ->withSum(
+                ['stocks as quantity' => fn ($q) => $warehouseId !== null ? $q->where('warehouse_id', $warehouseId) : $q],
+                'quantity',
+            )
             ->when($request->filled('search'), function ($q) use ($request) {
                 $search = $request->string('search')->toString();
                 $q->where(function ($q) use ($search) {
@@ -59,12 +65,22 @@ class ProductController extends Controller
         unset($data['supplier_id']);
         $attributeValueIds = $data['attribute_value_ids'] ?? [];
         unset($data['attribute_value_ids']);
+        unset($data['quantity']);
 
-        $data['quantity'] = 0;
+        $warehouseId = $this->resolvedWarehouseId($request);
+        if ($initialQty > 0 && $warehouseId === null) {
+            return response()->json([
+                'error' => [
+                    'code' => 'WAREHOUSE_REQUIRED',
+                    'message' => 'Selecciona un almacén concreto para registrar el stock inicial.',
+                ],
+            ], 422);
+        }
+
         $data['status'] ??= EntityStatus::ACTIVE;
 
         $product = null;
-        DB::transaction(function () use ($data, $initialQty, $supplierId, $attributeValueIds, $request, &$product) {
+        DB::transaction(function () use ($data, $initialQty, $supplierId, $attributeValueIds, $request, $warehouseId, &$product) {
             $product = Product::query()->create($data);
 
             $product->attributeValues()->sync($attributeValueIds);
@@ -78,27 +94,40 @@ class ProductController extends Controller
                         'quantity' => $initialQty,
                         'unit_price_with_tax_usd' => (float) $product->price,
                     ]],
-                ], $request->user());
+                ], $request->user(), $warehouseId);
             }
         });
 
-        return response()->json(['data' => $this->serializeProduct($product->refresh()->load(['category', 'unit', 'attributeValues.attribute']))], 201);
+        return response()->json(['data' => $this->serializeProduct($this->withQuantity($product->refresh(), $warehouseId))], 201);
     }
 
-    public function show(Product $product): JsonResponse
+    public function show(Request $request, Product $product): JsonResponse
     {
+        $warehouseId = $this->resolvedWarehouseId($request);
+        $product->loadSum(
+            ['stocks as quantity' => fn ($q) => $warehouseId !== null ? $q->where('warehouse_id', $warehouseId) : $q],
+            'quantity',
+        );
+
         return response()->json(['data' => $this->serializeProduct($product->load(['category', 'unit', 'attributeValues.attribute']))]);
     }
 
-    public function movements(Product $product): JsonResponse
+    public function movements(Request $request, Product $product): JsonResponse
     {
+        $warehouseId = $this->resolvedWarehouseId($request);
+
         $movements = \App\Models\Movement::query()
             ->with([
                 'createdBy:id,name',
                 'supplier:id,name',
+                'warehouse:id,name',
+                'toWarehouse:id,name',
                 'items' => fn ($q) => $q->where('product_id', $product->id),
             ])
             ->whereHas('items', fn ($q) => $q->where('product_id', $product->id))
+            ->when($warehouseId !== null, fn ($q) => $q->where(function ($q) use ($warehouseId) {
+                $q->where('warehouse_id', $warehouseId)->orWhere('to_warehouse_id', $warehouseId);
+            }))
             ->latest()
             ->get()
             ->map(fn (\App\Models\Movement $m) => [
@@ -110,6 +139,8 @@ class ProductController extends Controller
                 'created_at' => $m->created_at?->toDateTimeString(),
                 'created_by' => $m->createdBy?->name,
                 'supplier' => $m->supplier?->name,
+                'warehouse' => $m->warehouse?->name,
+                'to_warehouse' => $m->toWarehouse?->name,
                 'reason' => $m->reason,
             ]);
 
@@ -149,7 +180,7 @@ class ProductController extends Controller
             $product->attributeValues()->sync($attributeValueIds);
         }
 
-        return response()->json(['data' => $this->serializeProduct($product->refresh()->load(['category', 'unit', 'attributeValues.attribute']))]);
+        return response()->json(['data' => $this->serializeProduct($this->withQuantity($product->refresh(), $this->resolvedWarehouseId($request)))]);
     }
 
     public function delete(Product $product): JsonResponse
@@ -205,6 +236,18 @@ class ProductController extends Controller
             ], 422);
         }
 
+        $warehouseId = $this->resolvedWarehouseId($request);
+        $hasInitialStock = collect($preview['rows'])
+            ->contains(fn ($row) => $row['status'] === 'valid' && (int) ($row['data']['quantity'] ?? 0) > 0);
+        if ($hasInitialStock && $warehouseId === null) {
+            return response()->json([
+                'error' => [
+                    'code' => 'WAREHOUSE_REQUIRED',
+                    'message' => 'Selecciona un almacén concreto para importar productos con stock inicial.',
+                ],
+            ], 422);
+        }
+
         $createdProducts = 0;
         $initialItems = [];
 
@@ -215,7 +258,7 @@ class ProductController extends Controller
             $unitLookup[strtolower($u->name)] = $u;
         }
 
-        DB::transaction(function () use ($preview, &$createdProducts, &$initialItems, $request, $unitLookup) {
+        DB::transaction(function () use ($preview, &$createdProducts, &$initialItems, $request, $unitLookup, $warehouseId) {
             foreach ($preview['rows'] as $row) {
                 if ($row['status'] !== 'valid') {
                     continue;
@@ -235,7 +278,6 @@ class ProductController extends Controller
                         'unit_id' => $unit->id,
                         'price' => (float) $line['price'],
                         'reference' => trim((string) ($line['reference'] ?? '')),
-                        'quantity' => 0,
                         'status' => EntityStatus::ACTIVE,
                     ],
                 );
@@ -263,7 +305,7 @@ class ProductController extends Controller
                     'supplier_id' => $supplier->id,
                     'reason' => 'Carga inicial por importación',
                     'items' => $initialItems,
-                ], $request->user());
+                ], $request->user(), $warehouseId);
             }
         });
 
@@ -296,6 +338,17 @@ class ProductController extends Controller
         ]);
     }
 
+    private function withQuantity(Product $product, ?int $warehouseId): Product
+    {
+        $product->load(['category', 'unit', 'attributeValues.attribute']);
+        $product->loadSum(
+            ['stocks as quantity' => fn ($q) => $warehouseId !== null ? $q->where('warehouse_id', $warehouseId) : $q],
+            'quantity',
+        );
+
+        return $product;
+    }
+
     private function serializeProduct(Product $product): array
     {
         return [
@@ -306,7 +359,7 @@ class ProductController extends Controller
             'unit' => $product->unit,
             'price' => $product->price,
             'reference' => $product->reference,
-            'quantity' => $product->quantity,
+            'quantity' => (int) ($product->quantity ?? 0),
             'image_url' => $product->image ? Storage::disk('public')->url($product->image) : null,
             'status' => $product->status?->value ?? EntityStatus::ACTIVE->value,
             'created_at' => $product->created_at?->toDateTimeString(),

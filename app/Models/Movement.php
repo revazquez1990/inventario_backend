@@ -15,6 +15,7 @@ class Movement extends Model
 
     protected $fillable = [
         'type', 'adjustment_subtype', 'code', 'status',
+        'warehouse_id', 'to_warehouse_id',
         'exchange_rate_snapshot', 'exchange_rate_id', 'tax_rate_snapshot',
         'supplier_id', 'original_movement_id',
         'reason', 'reason_void',
@@ -49,6 +50,16 @@ class Movement extends Model
     public function supplier(): BelongsTo
     {
         return $this->belongsTo(Supplier::class);
+    }
+
+    public function warehouse(): BelongsTo
+    {
+        return $this->belongsTo(Warehouse::class);
+    }
+
+    public function toWarehouse(): BelongsTo
+    {
+        return $this->belongsTo(Warehouse::class, 'to_warehouse_id');
     }
 
     public function exchangeRate(): BelongsTo

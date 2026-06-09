@@ -9,7 +9,7 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('movement_counter', function (Blueprint $table) {
-            $table->enum('type', ['entrada', 'salida', 'venta', 'ajuste', 'anulacion'])->primary();
+            $table->enum('type', ['entrada', 'salida', 'venta', 'ajuste', 'anulacion', 'transferencia'])->primary();
             $table->unsignedInteger('next_value')->default(1);
         });
     }
