@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Enums\EntityStatus;
+use App\Enums\WarehouseKind;
 use App\Models\Concerns\HasEntityStatus;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
@@ -15,14 +16,20 @@ class Warehouse extends Model
     protected $table = 'warehouse';
 
     protected $fillable = [
-        'name', 'code', 'address', 'status',
+        'name', 'kind', 'code', 'address', 'status',
     ];
 
     protected function casts(): array
     {
         return [
             'status' => EntityStatus::class,
+            'kind' => WarehouseKind::class,
         ];
+    }
+
+    public function isStore(): bool
+    {
+        return $this->kind === WarehouseKind::TIENDA;
     }
 
     public function products(): BelongsToMany

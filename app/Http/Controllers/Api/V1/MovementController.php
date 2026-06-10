@@ -19,12 +19,12 @@ class MovementController extends Controller
 
     public function index(Request $request): JsonResponse
     {
-        $warehouseId = $this->resolvedWarehouseId($request);
+        $warehouseIds = $this->resolvedWarehouseIds($request);
 
         $query = Movement::query()
-            ->with(['createdBy:id,name,email,role,status', 'supplier', 'warehouse:id,name', 'toWarehouse:id,name', 'items.product'])
-            ->when($warehouseId !== null, fn ($q) => $q->where(function ($q) use ($warehouseId) {
-                $q->where('warehouse_id', $warehouseId)->orWhere('to_warehouse_id', $warehouseId);
+            ->with(['createdBy:id,name,email,role,status', 'supplier', 'warehouse:id,name,kind', 'toWarehouse:id,name,kind', 'items.product'])
+            ->when($warehouseIds !== [], fn ($q) => $q->where(function ($q) use ($warehouseIds) {
+                $q->whereIn('warehouse_id', $warehouseIds)->orWhereIn('to_warehouse_id', $warehouseIds);
             }))
             ->when($request->filled('type'), fn ($q) => $q->where('type', $request->string('type')->toString()))
             ->when($request->filled('status'), fn ($q) => $q->where('status', $request->string('status')->toString()))
@@ -51,7 +51,7 @@ class MovementController extends Controller
 
     public function show(Movement $movement): JsonResponse
     {
-        return response()->json(['data' => $this->serializeMovement($movement->load(['createdBy', 'voidedBy', 'supplier', 'warehouse:id,name', 'toWarehouse:id,name', 'items.product']))]);
+        return response()->json(['data' => $this->serializeMovement($movement->load(['createdBy', 'voidedBy', 'supplier', 'warehouse:id,name,kind', 'toWarehouse:id,name,kind', 'items.product']))]);
     }
 
     public function entrada(Request $request): JsonResponse
@@ -117,6 +117,7 @@ class MovementController extends Controller
             'items' => ['required', 'array', 'min:1'],
             'items.*.product_id' => ['required', 'integer', Rule::exists('product', 'id')],
             'items.*.quantity' => ['required', 'integer', 'min:1'],
+            'items.*.sale_price' => ['nullable', 'numeric', 'min:0'],
         ]);
 
         $toWarehouseId = (int) $data['to_warehouse_id'];
@@ -135,7 +136,7 @@ class MovementController extends Controller
 
         $movement = $this->movementService->create(MovementType::TRANSFERENCIA, $data, $request->user(), $originId, $toWarehouseId);
 
-        return response()->json(['data' => $this->serializeMovement($movement->load(['items.product', 'createdBy', 'warehouse:id,name', 'toWarehouse:id,name']))], 201);
+        return response()->json(['data' => $this->serializeMovement($movement->load(['items.product', 'createdBy', 'warehouse:id,name,kind', 'toWarehouse:id,name,kind']))], 201);
     }
 
     public function anular(Request $request, Movement $movement): JsonResponse
@@ -144,7 +145,7 @@ class MovementController extends Controller
 
         $voidMovement = $this->movementService->void($movement, $request->user(), $data['reason_void']);
 
-        return response()->json(['data' => $this->serializeMovement($voidMovement->load(['items.product', 'createdBy', 'warehouse:id,name', 'toWarehouse:id,name']))], 201);
+        return response()->json(['data' => $this->serializeMovement($voidMovement->load(['items.product', 'createdBy', 'warehouse:id,name,kind', 'toWarehouse:id,name,kind']))], 201);
     }
 
     private function createMovementResponse(Request $request, MovementType $type, array $data): JsonResponse
@@ -156,7 +157,7 @@ class MovementController extends Controller
 
         $movement = $this->movementService->create($type, $data, $request->user(), $warehouseId);
 
-        return response()->json(['data' => $this->serializeMovement($movement->load(['items.product', 'createdBy', 'supplier', 'warehouse:id,name', 'toWarehouse:id,name']))], 201);
+        return response()->json(['data' => $this->serializeMovement($movement->load(['items.product', 'createdBy', 'supplier', 'warehouse:id,name,kind', 'toWarehouse:id,name,kind']))], 201);
     }
 
     private function warehouseRequired(): JsonResponse
@@ -181,8 +182,8 @@ class MovementController extends Controller
             'tax_rate_snapshot' => $movement->tax_rate_snapshot,
             'reason' => $movement->reason,
             'reason_void' => $movement->reason_void,
-            'warehouse' => $movement->warehouse ? ['id' => $movement->warehouse->id, 'name' => $movement->warehouse->name] : null,
-            'to_warehouse' => $movement->toWarehouse ? ['id' => $movement->toWarehouse->id, 'name' => $movement->toWarehouse->name] : null,
+            'warehouse' => $movement->warehouse ? ['id' => $movement->warehouse->id, 'name' => $movement->warehouse->name, 'kind' => $movement->warehouse->kind?->value] : null,
+            'to_warehouse' => $movement->toWarehouse ? ['id' => $movement->toWarehouse->id, 'name' => $movement->toWarehouse->name, 'kind' => $movement->toWarehouse->kind?->value] : null,
             'supplier' => $movement->supplier ? ['id' => $movement->supplier->id, 'name' => $movement->supplier->name] : null,
             'created_by' => $movement->createdBy ? ['id' => $movement->createdBy->id, 'name' => $movement->createdBy->name, 'email' => $movement->createdBy->email] : null,
             'voided_by' => $movement->voidedBy ? ['id' => $movement->voidedBy->id, 'name' => $movement->voidedBy->name, 'email' => $movement->voidedBy->email] : null,

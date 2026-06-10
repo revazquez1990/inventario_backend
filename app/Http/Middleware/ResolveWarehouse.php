@@ -7,15 +7,21 @@ use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
- * Resolves the active warehouse for the request from the `X-Warehouse-Id`
- * header (numeric id, or `all`) and authorizes it against the user's access.
+ * Resolves the active location scope for the request from the `X-Warehouse-Id`
+ * header and authorizes it against the user's access. Accepted values:
+ *  - a numeric id  -> a single concrete location
+ *  - `all`         -> every accessible warehouse (kind = almacen)
+ *  - `all-tiendas` -> every store (kind = tienda) — admin only
  *
  * Exposes two request attributes for controllers:
- *  - `warehouse_id`  int|null  the concrete warehouse, or null when scope is "all"
- *  - `warehouse_all` bool      true when the request targets every warehouse
+ *  - `warehouse_ids` int[]    locations the request reads/aggregates over
+ *  - `warehouse_id`  int|null the single concrete location (writes), null for aggregates
  */
 class ResolveWarehouse
 {
+    public const SCOPE_ALL_WAREHOUSES = 'all';
+    public const SCOPE_ALL_STORES = 'all-tiendas';
+
     public function handle(Request $request, Closure $next): Response
     {
         $user = $request->user();
@@ -25,44 +31,53 @@ class ResolveWarehouse
         }
 
         $header = trim((string) $request->header('X-Warehouse-Id', ''));
-        $accessible = $user->accessibleWarehouseIds();
 
-        // "All warehouses" scope — admin only.
-        if ($header === 'all') {
+        // All stores — admin only.
+        if ($header === self::SCOPE_ALL_STORES) {
+            if (! $user->isAdmin()) {
+                return $this->error('FORBIDDEN', 'No tienes permisos para ver las tiendas.', 403);
+            }
+
+            return $this->withScope($request, $next, $user->accessibleWarehouseIds('tienda'), null);
+        }
+
+        // All warehouses (almacenes) — aggregate view, admin only.
+        if ($header === self::SCOPE_ALL_WAREHOUSES) {
             if (! $user->isAdmin()) {
                 return $this->error('FORBIDDEN', 'No tienes permisos para ver todos los almacenes.', 403);
             }
 
-            $request->attributes->set('warehouse_id', null);
-            $request->attributes->set('warehouse_all', true);
-
-            return $next($request);
+            return $this->withScope($request, $next, $user->accessibleWarehouseIds('almacen'), null);
         }
 
-        // Explicit warehouse id.
+        // A concrete location.
         if ($header !== '') {
             $warehouseId = (int) $header;
 
             if (! $user->canAccessWarehouse($warehouseId)) {
-                return $this->error('FORBIDDEN', 'No tienes acceso a este almacén.', 403);
+                return $this->error('FORBIDDEN', 'No tienes acceso a esta ubicación.', 403);
             }
 
-            $request->attributes->set('warehouse_id', $warehouseId);
-            $request->attributes->set('warehouse_all', false);
-
-            return $next($request);
+            return $this->withScope($request, $next, [$warehouseId], $warehouseId);
         }
 
-        // No header: admin defaults to "all", almacenero to their first warehouse.
+        // No header: admin defaults to all warehouses, almacenero to their first one.
         if ($user->isAdmin()) {
-            $request->attributes->set('warehouse_id', null);
-            $request->attributes->set('warehouse_all', true);
-
-            return $next($request);
+            return $this->withScope($request, $next, $user->accessibleWarehouseIds('almacen'), null);
         }
 
-        $request->attributes->set('warehouse_id', $accessible[0] ?? null);
-        $request->attributes->set('warehouse_all', false);
+        $first = $user->accessibleWarehouseIds('almacen')[0] ?? null;
+
+        return $this->withScope($request, $next, $first !== null ? [$first] : [], $first);
+    }
+
+    /**
+     * @param  array<int, int>  $ids
+     */
+    private function withScope(Request $request, Closure $next, array $ids, ?int $concreteId): Response
+    {
+        $request->attributes->set('warehouse_ids', array_values($ids));
+        $request->attributes->set('warehouse_id', $concreteId);
 
         return $next($request);
     }

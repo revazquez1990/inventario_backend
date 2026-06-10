@@ -12,7 +12,7 @@ class StockService
      * Apply a stock delta to a product within a specific warehouse, locking the
      * row to keep concurrent movements consistent.
      */
-    public function lockAndApply(int $productId, int $warehouseId, int $delta): Stock
+    public function lockAndApply(int $productId, int $warehouseId, int $delta, ?float $salePrice = null): Stock
     {
         $stock = Stock::query()
             ->where('product_id', $productId)
@@ -35,7 +35,11 @@ class StockService
             throw new HttpException(409, "Stock insuficiente para {$product?->name}.");
         }
 
-        $stock->forceFill(['quantity' => $stock->quantity + $delta])->save();
+        $stock->forceFill(['quantity' => $stock->quantity + $delta]);
+        if ($salePrice !== null) {
+            $stock->forceFill(['sale_price' => $salePrice]);
+        }
+        $stock->save();
 
         return $stock;
     }

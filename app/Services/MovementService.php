@@ -9,6 +9,7 @@ use App\Models\Movement;
 use App\Models\Product;
 use App\Models\Setting;
 use App\Models\User;
+use App\Models\Warehouse;
 use Illuminate\Support\Facades\DB;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 
@@ -30,13 +31,20 @@ class MovementService
             $totals = ['without_usd' => 0.0, 'tax_usd' => 0.0, 'with_usd' => 0.0, 'without_cup' => 0.0, 'tax_cup' => 0.0, 'with_cup' => 0.0];
             $items = [];
 
+            // For transfers, the destination only carries a sale price when it is a store.
+            $destinationIsStore = $type === MovementType::TRANSFERENCIA
+                && Warehouse::query()->find($toWarehouseId)?->isStore() === true;
+
             foreach ($data['items'] as $line) {
                 $quantity = (int) $line['quantity'];
                 $productId = (int) $line['product_id'];
 
                 if ($type === MovementType::TRANSFERENCIA) {
+                    $salePrice = $destinationIsStore && isset($line['sale_price']) && $line['sale_price'] !== null
+                        ? (float) $line['sale_price']
+                        : null;
                     $this->stockService->lockAndApply($productId, $warehouseId, -abs($quantity));
-                    $this->stockService->lockAndApply($productId, (int) $toWarehouseId, abs($quantity));
+                    $this->stockService->lockAndApply($productId, (int) $toWarehouseId, abs($quantity), $salePrice);
                 } else {
                     $this->stockService->lockAndApply($productId, $warehouseId, $this->stockDelta($type, $quantity));
                 }

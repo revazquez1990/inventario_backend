@@ -62,18 +62,25 @@ class User extends Authenticatable implements JWTSubject
     }
 
     /**
-     * IDs of warehouses this user may access. Admins implicitly reach every
-     * active warehouse; almaceneros only the ones explicitly assigned.
+     * IDs of locations this user may access. Admins implicitly reach every
+     * active warehouse and store; almaceneros only the warehouses (almacenes)
+     * explicitly assigned — stores are always transparent to them.
      *
+     * @param  string|null  $kind  Optional filter: 'almacen' | 'tienda'.
      * @return array<int, int>
      */
-    public function accessibleWarehouseIds(): array
+    public function accessibleWarehouseIds(?string $kind = null): array
     {
         if ($this->isAdmin()) {
-            return Warehouse::query()->onlyActive()->pluck('id')->all();
+            return Warehouse::query()->onlyActive()
+                ->when($kind !== null, fn ($q) => $q->where('kind', $kind))
+                ->pluck('id')->all();
         }
 
-        return $this->warehouses()->pluck('warehouse.id')->all();
+        // Almaceneros never see stores, regardless of the requested kind.
+        return $this->warehouses()
+            ->where('warehouse.kind', 'almacen')
+            ->pluck('warehouse.id')->all();
     }
 
     public function canAccessWarehouse(int $warehouseId): bool

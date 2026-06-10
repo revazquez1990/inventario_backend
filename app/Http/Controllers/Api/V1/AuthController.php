@@ -119,7 +119,7 @@ class AuthController extends Controller
             'warehouses' => Warehouse::query()
                 ->whereIn('id', $user->accessibleWarehouseIds())
                 ->orderBy('name')
-                ->get(['id', 'name']),
+                ->get(['id', 'name', 'kind']),
         ];
     }
 
