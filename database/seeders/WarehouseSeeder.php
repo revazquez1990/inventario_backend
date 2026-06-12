@@ -13,12 +13,12 @@ class WarehouseSeeder extends Seeder
     {
         Warehouse::query()->updateOrCreate(
             ['code' => 'PRINCIPAL'],
-            ['name' => 'Almacén Principal', 'kind' => WarehouseKind::ALMACEN, 'status' => EntityStatus::ACTIVE],
+            ['name' => 'Almacén Guanabacoa', 'kind' => WarehouseKind::ALMACEN, 'status' => EntityStatus::ACTIVE],
         );
 
         Warehouse::query()->updateOrCreate(
             ['code' => 'SECUNDARIO'],
-            ['name' => 'Almacén Secundario', 'kind' => WarehouseKind::ALMACEN, 'status' => EntityStatus::ACTIVE],
+            ['name' => 'Almacén Alamar', 'kind' => WarehouseKind::ALMACEN, 'status' => EntityStatus::ACTIVE],
         );
 
         Warehouse::query()->updateOrCreate(
