@@ -9,7 +9,6 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use ZipArchive;
 
@@ -249,8 +248,14 @@ class ReportController extends Controller
 
         $format = $request->string('format', 'xlsx')->lower()->toString();
         $headers = ['Producto', 'Nombre del producto', 'Periodo', 'Salidas', 'Stock actual'];
+        $suffix = match ($validated['period_type']) {
+            'annual' => 'anual',
+            'monthly' => 'mensual',
+            'weekly' => 'semanal',
+            default => $from->format('d-m-Y').'_'.$to->format('d-m-Y'),
+        };
 
-        return $this->export('reporte_salidas_'.Str::slug($label), $headers, $rows, $format);
+        return $this->export('reporte_salidas_'.$suffix, $headers, $rows, $format);
     }
 
     /**
