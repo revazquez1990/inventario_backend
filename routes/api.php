@@ -33,6 +33,8 @@ Route::middleware(['auth:api', 'active_user', 'role:admin'])->group(function () 
     Route::get('/warehouses/{warehouse}', [WarehouseController::class, 'show']);
     Route::put('/warehouses/{warehouse}', [WarehouseController::class, 'update']);
     Route::delete('/warehouses/{warehouse}', [WarehouseController::class, 'delete']);
+    Route::get('/warehouses/{warehouse}/products', [WarehouseController::class, 'products']);
+    Route::put('/warehouses/{warehouse}/products/{product}/price', [WarehouseController::class, 'updateProductPrice']);
 });
 
 Route::middleware(['auth:api', 'active_user', 'warehouse'])->group(function () {
@@ -95,4 +97,5 @@ Route::middleware(['auth:api', 'active_user', 'warehouse'])->group(function () {
     Route::get('/dashboard/sales', [ReportController::class, 'sales']);
     Route::get('/reports/low-stock', [ReportController::class, 'lowStock']);
     Route::get('/reports/movements', [ReportController::class, 'movements']);
+    Route::get('/reports/product-exits', [ReportController::class, 'productExits']);
 });

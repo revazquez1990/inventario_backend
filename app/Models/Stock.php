@@ -10,13 +10,14 @@ class Stock extends Model
     protected $table = 'product_warehouse';
 
     protected $fillable = [
-        'product_id', 'warehouse_id', 'quantity',
+        'product_id', 'warehouse_id', 'quantity', 'sale_price',
     ];
 
     protected function casts(): array
     {
         return [
             'quantity' => 'integer',
+            'sale_price' => 'decimal:2',
         ];
     }
 

@@ -26,14 +26,19 @@ class ProductController extends Controller
 
     public function index(Request $request): JsonResponse
     {
-        $warehouseId = $this->resolvedWarehouseId($request);
+        $warehouseIds = $this->resolvedWarehouseIds($request);
+        $concreteId = $this->resolvedWarehouseId($request);
 
         $products = Product::query()
             ->with(['category', 'unit', 'attributeValues.attribute'])
             ->withSum(
-                ['stocks as quantity' => fn ($q) => $warehouseId !== null ? $q->where('warehouse_id', $warehouseId) : $q],
+                ['stocks as quantity' => fn ($q) => $q->whereIn('warehouse_id', $warehouseIds)],
                 'quantity',
             )
+            ->when($concreteId !== null, fn ($q) => $q->withMax(
+                ['stocks as sale_price' => fn ($s) => $s->where('warehouse_id', $concreteId)],
+                'sale_price',
+            ))
             ->when($request->filled('search'), function ($q) use ($request) {
                 $search = $request->string('search')->toString();
                 $q->where(function ($q) use ($search) {
@@ -98,23 +103,19 @@ class ProductController extends Controller
             }
         });
 
-        return response()->json(['data' => $this->serializeProduct($this->withQuantity($product->refresh(), $warehouseId))], 201);
+        return response()->json(['data' => $this->serializeProduct($this->withQuantity($product->refresh(), $this->resolvedWarehouseIds($request), $warehouseId))], 201);
     }
 
     public function show(Request $request, Product $product): JsonResponse
     {
-        $warehouseId = $this->resolvedWarehouseId($request);
-        $product->loadSum(
-            ['stocks as quantity' => fn ($q) => $warehouseId !== null ? $q->where('warehouse_id', $warehouseId) : $q],
-            'quantity',
-        );
-
-        return response()->json(['data' => $this->serializeProduct($product->load(['category', 'unit', 'attributeValues.attribute']))]);
+        return response()->json(['data' => $this->serializeProduct(
+            $this->withQuantity($product, $this->resolvedWarehouseIds($request), $this->resolvedWarehouseId($request)),
+        )]);
     }
 
     public function movements(Request $request, Product $product): JsonResponse
     {
-        $warehouseId = $this->resolvedWarehouseId($request);
+        $warehouseIds = $this->resolvedWarehouseIds($request);
 
         $movements = \App\Models\Movement::query()
             ->with([
@@ -125,8 +126,8 @@ class ProductController extends Controller
                 'items' => fn ($q) => $q->where('product_id', $product->id),
             ])
             ->whereHas('items', fn ($q) => $q->where('product_id', $product->id))
-            ->when($warehouseId !== null, fn ($q) => $q->where(function ($q) use ($warehouseId) {
-                $q->where('warehouse_id', $warehouseId)->orWhere('to_warehouse_id', $warehouseId);
+            ->when($warehouseIds !== [], fn ($q) => $q->where(function ($q) use ($warehouseIds) {
+                $q->whereIn('warehouse_id', $warehouseIds)->orWhereIn('to_warehouse_id', $warehouseIds);
             }))
             ->latest()
             ->get()
@@ -180,7 +181,7 @@ class ProductController extends Controller
             $product->attributeValues()->sync($attributeValueIds);
         }
 
-        return response()->json(['data' => $this->serializeProduct($this->withQuantity($product->refresh(), $this->resolvedWarehouseId($request)))]);
+        return response()->json(['data' => $this->serializeProduct($this->withQuantity($product->refresh(), $this->resolvedWarehouseIds($request), $this->resolvedWarehouseId($request)))]);
     }
 
     public function delete(Product $product): JsonResponse
@@ -338,13 +339,23 @@ class ProductController extends Controller
         ]);
     }
 
-    private function withQuantity(Product $product, ?int $warehouseId): Product
+    /**
+     * @param  array<int, int>  $warehouseIds
+     */
+    private function withQuantity(Product $product, array $warehouseIds, ?int $concreteId = null): Product
     {
         $product->load(['category', 'unit', 'attributeValues.attribute']);
         $product->loadSum(
-            ['stocks as quantity' => fn ($q) => $warehouseId !== null ? $q->where('warehouse_id', $warehouseId) : $q],
+            ['stocks as quantity' => fn ($q) => $q->whereIn('warehouse_id', $warehouseIds)],
             'quantity',
         );
+
+        if ($concreteId !== null) {
+            $product->loadMax(
+                ['stocks as sale_price' => fn ($q) => $q->where('warehouse_id', $concreteId)],
+                'sale_price',
+            );
+        }
 
         return $product;
     }
@@ -360,6 +371,7 @@ class ProductController extends Controller
             'price' => $product->price,
             'reference' => $product->reference,
             'quantity' => (int) ($product->quantity ?? 0),
+            'sale_price' => $product->getAttribute('sale_price') !== null ? number_format((float) $product->getAttribute('sale_price'), 2, '.', '') : null,
             'image_url' => $product->image ? Storage::disk('public')->url($product->image) : null,
             'status' => $product->status?->value ?? EntityStatus::ACTIVE->value,
             'created_at' => $product->created_at?->toDateTimeString(),
