@@ -7,7 +7,10 @@ use App\Models\Movement;
 use App\Models\Product;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
 use ZipArchive;
 
 class ReportController extends Controller
@@ -194,6 +197,98 @@ class ReportController extends Controller
             ->groupBy('category.id', 'category.name')
             ->orderByDesc('total_usd')
             ->get();
+    }
+
+    /**
+     * Excel report: per product, the units that left (salidas + ventas) within a
+     * selected period and the current stock, scoped to the active location(s).
+     */
+    public function productExits(Request $request)
+    {
+        $validated = $request->validate([
+            'period_type' => ['required', Rule::in(['annual', 'monthly', 'weekly', 'custom'])],
+            'year' => ['nullable', 'integer', 'min:2000', 'max:2100'],
+            'month' => ['nullable', 'required_if:period_type,monthly', 'integer', 'min:1', 'max:12'],
+            'date' => ['nullable', 'required_if:period_type,weekly', 'date'],
+            'from' => ['nullable', 'required_if:period_type,custom', 'date'],
+            'to' => ['nullable', 'required_if:period_type,custom', 'date', 'after_or_equal:from'],
+        ]);
+
+        [$from, $to, $label] = $this->resolvePeriod($validated);
+        $warehouseIds = $this->resolvedWarehouseIds($request);
+
+        // Outflows counted: salida + venta movements (active), within the period and scope.
+        $exits = DB::table('movement_item')
+            ->join('movement', 'movement.id', '=', 'movement_item.movement_id')
+            ->whereIn('movement.type', ['salida', 'venta'])
+            ->where('movement.status', 'activo')
+            ->when($warehouseIds !== [], fn ($q) => $q->whereIn('movement.warehouse_id', $warehouseIds))
+            ->whereBetween('movement.created_at', [$from, $to])
+            ->groupBy('movement_item.product_id')
+            ->selectRaw('movement_item.product_id, SUM(movement_item.quantity) as qty')
+            ->pluck('qty', 'movement_item.product_id');
+
+        // Current stock per product in the active scope.
+        $stock = DB::table('product_warehouse')
+            ->when($warehouseIds !== [], fn ($q) => $q->whereIn('warehouse_id', $warehouseIds))
+            ->groupBy('product_id')
+            ->selectRaw('product_id, SUM(quantity) as qty')
+            ->pluck('qty', 'product_id');
+
+        $rows = Product::query()
+            ->orderBy('name')
+            ->get(['id', 'code', 'name'])
+            ->map(fn (Product $product) => [
+                'Producto' => $product->code,
+                'Nombre del producto' => $product->name,
+                'Periodo' => $label,
+                'Salidas' => (int) ($exits[$product->id] ?? 0),
+                'Stock actual' => (int) ($stock[$product->id] ?? 0),
+            ])
+            ->all();
+
+        $format = $request->string('format', 'xlsx')->lower()->toString();
+        $headers = ['Producto', 'Nombre del producto', 'Periodo', 'Salidas', 'Stock actual'];
+
+        return $this->export('reporte_salidas_'.Str::slug($label), $headers, $rows, $format);
+    }
+
+    /**
+     * @param  array<string, mixed>  $v
+     * @return array{0: Carbon, 1: Carbon, 2: string}
+     */
+    private function resolvePeriod(array $v): array
+    {
+        $tz = 'America/Bogota';
+
+        return match ($v['period_type']) {
+            'annual' => (function () use ($v, $tz) {
+                $year = (int) ($v['year'] ?? now($tz)->year);
+                $from = Carbon::create($year, 1, 1, 0, 0, 0, $tz);
+
+                return [$from->copy()->startOfDay(), $from->copy()->endOfYear(), "Año {$year}"];
+            })(),
+            'monthly' => (function () use ($v, $tz) {
+                $year = (int) ($v['year'] ?? now($tz)->year);
+                $month = (int) $v['month'];
+                $from = Carbon::create($year, $month, 1, 0, 0, 0, $tz);
+
+                return [$from->copy()->startOfMonth(), $from->copy()->endOfMonth(), sprintf('%04d-%02d', $year, $month)];
+            })(),
+            'weekly' => (function () use ($v, $tz) {
+                $day = Carbon::parse($v['date'], $tz);
+                $from = $day->copy()->startOfWeek();
+                $to = $day->copy()->endOfWeek();
+
+                return [$from, $to, "Semana {$from->toDateString()} a {$to->toDateString()}"];
+            })(),
+            default => (function () use ($v, $tz) {
+                $from = Carbon::parse($v['from'], $tz)->startOfDay();
+                $to = Carbon::parse($v['to'], $tz)->endOfDay();
+
+                return [$from, $to, "{$from->toDateString()} a {$to->toDateString()}"];
+            })(),
+        };
     }
 
     private function export(string $name, array $headers, array $rows, string $format)

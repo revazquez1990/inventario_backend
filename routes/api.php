@@ -97,4 +97,5 @@ Route::middleware(['auth:api', 'active_user', 'warehouse'])->group(function () {
     Route::get('/dashboard/sales', [ReportController::class, 'sales']);
     Route::get('/reports/low-stock', [ReportController::class, 'lowStock']);
     Route::get('/reports/movements', [ReportController::class, 'movements']);
+    Route::get('/reports/product-exits', [ReportController::class, 'productExits']);
 });
