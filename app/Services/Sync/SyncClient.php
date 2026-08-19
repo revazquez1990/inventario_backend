@@ -7,6 +7,7 @@ use App\Models\SyncOutbox;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Storage;
 
 /**
  * Cliente de sincronización que corre en cada nodo (laptop). Habla con el API
@@ -123,6 +124,38 @@ class SyncClient
         }
 
         return $counts;
+    }
+
+    /**
+     * Sube al central los archivos de imagen (product.image) que le falten en
+     * disco y que este nodo tenga localmente. El central indica qué rutas no
+     * tiene; es idempotente (no re-sube lo ya presente).
+     *
+     * @return array<string, int>  cantidad de imágenes subidas
+     */
+    public function pushMedia(): array
+    {
+        $response = $this->http()->get('/api/v1/sync/media/missing');
+        $response->throw();
+
+        $missing = (array) $response->json('data.missing', []);
+        $uploaded = 0;
+
+        foreach ($missing as $path) {
+            if (! is_string($path) || $path === '' || ! Storage::disk('public')->exists($path)) {
+                continue;
+            }
+
+            $upload = $this->http()
+                ->attach('file', Storage::disk('public')->get($path), basename($path))
+                ->post('/api/v1/sync/media', ['path' => $path]);
+
+            if ($upload->successful() && $upload->json('data.stored') === true) {
+                $uploaded++;
+            }
+        }
+
+        return $uploaded > 0 ? ['images' => $uploaded] : [];
     }
 
     /**

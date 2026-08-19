@@ -18,6 +18,8 @@ Route::get('/health', fn () => ['status' => 'ok', 'time' => now()->toIso8601Stri
 Route::prefix('sync')->middleware('sync.node')->group(function () {
     Route::post('/pull', [SyncController::class, 'pull']);
     Route::post('/push', [SyncController::class, 'push']);
+    Route::get('/media/missing', [SyncController::class, 'mediaMissing']);
+    Route::post('/media', [SyncController::class, 'mediaUpload']);
 });
 
 Route::prefix('auth')->group(function () {

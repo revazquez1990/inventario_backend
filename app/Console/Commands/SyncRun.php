@@ -39,6 +39,9 @@ class SyncRun extends Command
             if ($doPush) {
                 $result = $client->push();
                 $this->info('Subida: '.($result === [] ? 'nada pendiente' : json_encode($result)));
+
+                $media = $client->pushMedia();
+                $this->info('Imágenes: '.($media === [] ? 'nada que subir' : json_encode($media)));
             }
 
             if ($doPull) {

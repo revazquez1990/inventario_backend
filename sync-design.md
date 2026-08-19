@@ -223,6 +223,19 @@ Frontend (`inventario-frontend`):
 - Almacenes: campo `node_id` (qué nodo opera el almacén).
 - Verificado con `tsc -b` + `vite build`.
 
+## Fase 3.2 — Sincronización de imágenes (archivos)
+
+El sync viaja como filas (columnas por uuid): `product.image` lleva solo el **path**, no el
+archivo. Para que las imágenes se vean en el central se sincroniza también el binario:
+- **Central:** `GET /api/v1/sync/media/missing` devuelve los `product.image` referenciados en
+  BD cuyo archivo falta en disco; `POST /api/v1/sync/media` (multipart `path`+`file`) lo guarda
+  en `storage/app/public/<path>` si no existe (idempotente; solo rutas dentro de `products/`).
+  Ambas bajo `sync.node`.
+- **Nodo:** `SyncClient::pushMedia()` pide la lista de faltantes y sube las que tenga localmente.
+  Se dispara tras el push en `sync:run` y en `POST /sync/run` (respuesta incluye `media`).
+- Pendiente (futuro): bajar al nodo las imágenes de productos de **otros** nodos (hoy solo
+  sube nodo→central, que es lo que necesita el central para mostrarlas).
+
 ## Notas / riesgos
 
 - Hacer cada fase incremental y probada antes de la siguiente; no todo de una vez.
