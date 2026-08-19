@@ -4,12 +4,14 @@ namespace App\Models;
 
 use App\Enums\EntityStatus;
 use App\Models\Concerns\HasEntityStatus;
+use App\Models\Concerns\HasSyncIdentity;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Category extends Model
 {
     use HasEntityStatus;
+    use HasSyncIdentity;
 
     protected $table = 'category';
 

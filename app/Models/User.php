@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Enums\EntityStatus;
 use App\Enums\UserRole;
 use App\Models\Concerns\HasEntityStatus;
+use App\Models\Concerns\HasSyncIdentity;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
@@ -15,6 +16,7 @@ class User extends Authenticatable implements JWTSubject
 {
     use HasFactory;
     use HasEntityStatus;
+    use HasSyncIdentity;
 
     protected $table = 'user';
 

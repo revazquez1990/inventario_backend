@@ -17,6 +17,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'role' => \App\Http\Middleware\EnsureUserHasRole::class,
             'active_user' => \App\Http\Middleware\EnsureUserIsActive::class,
             'warehouse' => \App\Http\Middleware\ResolveWarehouse::class,
+            'sync.node' => \App\Http\Middleware\AuthenticateSyncNode::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {

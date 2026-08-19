@@ -118,6 +118,7 @@ class WarehouseController extends Controller
             'name' => [$ignoreId ? 'sometimes' : 'required', 'string', 'max:160'],
             'kind' => ['sometimes', Rule::in(['almacen', 'tienda'])],
             'code' => ['nullable', 'string', 'max:60', Rule::unique('warehouse', 'code')->ignore($ignoreId)],
+            'node_id' => ['nullable', 'string', 'max:60'],
             'address' => ['nullable', 'string', 'max:200'],
             'status' => ['sometimes', Rule::in(['active', 'inactive'])],
         ]);
@@ -133,6 +134,7 @@ class WarehouseController extends Controller
             'name' => $warehouse->name,
             'kind' => $warehouse->kind?->value ?? 'almacen',
             'code' => $warehouse->code,
+            'node_id' => $warehouse->node_id,
             'address' => $warehouse->address,
             'status' => $warehouse->status?->value ?? EntityStatus::ACTIVE->value,
         ];

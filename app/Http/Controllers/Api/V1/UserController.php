@@ -73,8 +73,10 @@ class UserController extends Controller
 
         if ($user->isAdmin()) {
             $user->warehouses()->sync([]);
+            $user->touch(); // propaga el cambio de asignación por sincronización
         } elseif ($warehouseIds !== null) {
             $user->warehouses()->sync($warehouseIds);
+            $user->touch(); // propaga el cambio de asignación por sincronización
         }
 
         return response()->json(['data' => $this->serializeUser($user->refresh())]);
@@ -89,6 +91,7 @@ class UserController extends Controller
     private function syncWarehouses(User $user, array $warehouseIds): void
     {
         $user->warehouses()->sync($user->isAdmin() ? [] : $warehouseIds);
+        $user->touch(); // propaga la asignación de almacenes por sincronización
     }
 
     public function updateStatus(UpdateUserStatusRequest $request, User $user): JsonResponse

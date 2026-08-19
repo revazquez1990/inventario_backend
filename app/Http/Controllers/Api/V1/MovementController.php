@@ -6,6 +6,7 @@ use App\Enums\MovementStatus;
 use App\Enums\MovementType;
 use App\Http\Controllers\Controller;
 use App\Models\Movement;
+use App\Models\Warehouse;
 use App\Services\MovementService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -22,7 +23,7 @@ class MovementController extends Controller
         $warehouseIds = $this->resolvedWarehouseIds($request);
 
         $query = Movement::query()
-            ->with(['createdBy:id,name,email,role,status', 'supplier', 'warehouse:id,name,kind', 'toWarehouse:id,name,kind', 'items.product'])
+            ->with(['createdBy:id,name,email,role,status', 'receivedBy:id,name,email', 'supplier', 'warehouse:id,name,kind', 'toWarehouse:id,name,kind', 'items.product'])
             ->when($warehouseIds !== [], fn ($q) => $q->where(function ($q) use ($warehouseIds) {
                 $q->whereIn('warehouse_id', $warehouseIds)->orWhereIn('to_warehouse_id', $warehouseIds);
             }))
@@ -128,9 +129,12 @@ class MovementController extends Controller
             ], 422);
         }
 
-        if (! $request->user()->canAccessWarehouse($toWarehouseId)) {
+        // El destino puede estar en otra laptop (otro nodo): no se exige acceso a él.
+        // Solo se impide que un almacenero transfiera hacia una tienda (ámbito del admin).
+        $destination = Warehouse::query()->find($toWarehouseId);
+        if (! $request->user()->isAdmin() && $destination?->isStore()) {
             return response()->json([
-                'error' => ['code' => 'FORBIDDEN', 'message' => 'No tienes acceso al almacén destino.'],
+                'error' => ['code' => 'FORBIDDEN', 'message' => 'No puedes transferir hacia una tienda.'],
             ], 403);
         }
 
@@ -146,6 +150,20 @@ class MovementController extends Controller
         $voidMovement = $this->movementService->void($movement, $request->user(), $data['reason_void']);
 
         return response()->json(['data' => $this->serializeMovement($voidMovement->load(['items.product', 'createdBy', 'warehouse:id,name,kind', 'toWarehouse:id,name,kind']))], 201);
+    }
+
+    public function recibir(Request $request, Movement $movement): JsonResponse
+    {
+        // Solo quien opera el almacén destino (o un admin) confirma la recepción.
+        if (! $request->user()->isAdmin() && ! $request->user()->canAccessWarehouse((int) $movement->to_warehouse_id)) {
+            return response()->json([
+                'error' => ['code' => 'FORBIDDEN', 'message' => 'No tienes acceso al almacén destino.'],
+            ], 403);
+        }
+
+        $received = $this->movementService->confirmReception($movement, $request->user());
+
+        return response()->json(['data' => $this->serializeMovement($received->load(['items.product', 'createdBy', 'receivedBy', 'warehouse:id,name,kind', 'toWarehouse:id,name,kind']))]);
     }
 
     private function createMovementResponse(Request $request, MovementType $type, array $data): JsonResponse
@@ -178,6 +196,7 @@ class MovementController extends Controller
             'adjustment_subtype' => $movement->adjustment_subtype?->value,
             'code' => $movement->code,
             'status' => $movement->status?->value ?? MovementStatus::ACTIVO->value,
+            'transfer_status' => $movement->transfer_status?->value,
             'exchange_rate_snapshot' => $movement->exchange_rate_snapshot,
             'tax_rate_snapshot' => $movement->tax_rate_snapshot,
             'reason' => $movement->reason,
@@ -188,6 +207,8 @@ class MovementController extends Controller
             'created_by' => $movement->createdBy ? ['id' => $movement->createdBy->id, 'name' => $movement->createdBy->name, 'email' => $movement->createdBy->email] : null,
             'voided_by' => $movement->voidedBy ? ['id' => $movement->voidedBy->id, 'name' => $movement->voidedBy->name, 'email' => $movement->voidedBy->email] : null,
             'voided_at' => $movement->voided_at?->toDateTimeString(),
+            'received_by' => $movement->receivedBy ? ['id' => $movement->receivedBy->id, 'name' => $movement->receivedBy->name, 'email' => $movement->receivedBy->email] : null,
+            'received_at' => $movement->received_at?->toDateTimeString(),
             'created_at' => $movement->created_at?->toDateTimeString(),
             'totals' => [
                 'without_tax_usd' => $movement->total_without_tax_usd,

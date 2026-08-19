@@ -42,13 +42,18 @@ class StoreFlowTest extends TestCase
             ->postJson('/api/v1/movements/entrada', ['items' => [['product_id' => $product->id, 'quantity' => 20]]])
             ->assertCreated();
 
-        $this->actingAs($admin, 'api')->withHeaders(['X-Warehouse-Id' => (string) $warehouse->id])
+        $transfer = $this->actingAs($admin, 'api')->withHeaders(['X-Warehouse-Id' => (string) $warehouse->id])
             ->postJson('/api/v1/movements/transferencia', [
                 'to_warehouse_id' => $store->id,
                 'items' => [['product_id' => $product->id, 'quantity' => 7, 'sale_price' => 19.50]],
             ])
             ->assertCreated()
             ->assertJsonPath('data.to_warehouse.kind', 'tienda');
+
+        // Confirm reception at the store: stock and sale price land on reception.
+        $this->actingAs($admin, 'api')
+            ->postJson("/api/v1/movements/{$transfer->json('data.id')}/recibir")
+            ->assertOk();
 
         // Store product list reflects stock + sale price.
         $this->actingAs($admin, 'api')

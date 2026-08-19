@@ -2,11 +2,14 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\HasSyncIdentity;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class Stock extends Model
 {
+    use HasSyncIdentity;
+
     protected $table = 'product_warehouse';
 
     protected $fillable = [

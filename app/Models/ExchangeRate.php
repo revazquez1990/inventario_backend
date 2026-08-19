@@ -2,11 +2,14 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\HasSyncIdentity;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class ExchangeRate extends Model
 {
+    use HasSyncIdentity;
+
     protected $table = 'exchange_rate';
 
     protected $fillable = ['rate_date', 'usd_to_cup', 'created_by_user_id'];

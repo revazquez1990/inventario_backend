@@ -89,6 +89,7 @@ class ProductController extends Controller
             $product = Product::query()->create($data);
 
             $product->attributeValues()->sync($attributeValueIds);
+            $product->touch(); // propaga el cambio de atributos por sincronización
 
             if ($initialQty > 0) {
                 $this->movementService->create(MovementType::ENTRADA, [
@@ -179,6 +180,7 @@ class ProductController extends Controller
 
         if ($syncAttributeValues) {
             $product->attributeValues()->sync($attributeValueIds);
+            $product->touch(); // propaga el cambio de atributos por sincronización
         }
 
         return response()->json(['data' => $this->serializeProduct($this->withQuantity($product->refresh(), $this->resolvedWarehouseIds($request), $this->resolvedWarehouseId($request)))]);

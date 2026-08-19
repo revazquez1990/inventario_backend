@@ -13,6 +13,10 @@ class MovementCodeGenerator
         $value = $counter->next_value;
         $counter->forceFill(['next_value' => $value + 1])->save();
 
-        return $type->codePrefix().'-'.str_pad((string) $value, 5, '0', STR_PAD_LEFT);
+        // El prefijo de nodo evita que los códigos choquen al consolidarse en el central.
+        $nodePrefix = config('sync.code_prefix');
+        $nodePrefix = $nodePrefix !== null && $nodePrefix !== '' ? $nodePrefix.'-' : '';
+
+        return $nodePrefix.$type->codePrefix().'-'.str_pad((string) $value, 5, '0', STR_PAD_LEFT);
     }
 }

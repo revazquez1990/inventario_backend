@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Enums\EntityStatus;
 use App\Models\Concerns\HasEntityStatus;
+use App\Models\Concerns\HasSyncIdentity;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
@@ -12,6 +13,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 class Product extends Model
 {
     use HasEntityStatus;
+    use HasSyncIdentity;
 
     protected $table = 'product';
 

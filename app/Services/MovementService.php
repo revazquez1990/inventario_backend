@@ -4,10 +4,12 @@ namespace App\Services;
 
 use App\Enums\MovementStatus;
 use App\Enums\MovementType;
+use App\Enums\TransferStatus;
 use App\Models\ExchangeRate;
 use App\Models\Movement;
 use App\Models\Product;
 use App\Models\Setting;
+use App\Models\SyncOutbox;
 use App\Models\User;
 use App\Models\Warehouse;
 use Illuminate\Support\Facades\DB;
@@ -31,20 +33,18 @@ class MovementService
             $totals = ['without_usd' => 0.0, 'tax_usd' => 0.0, 'with_usd' => 0.0, 'without_cup' => 0.0, 'tax_cup' => 0.0, 'with_cup' => 0.0];
             $items = [];
 
-            // For transfers, the destination only carries a sale price when it is a store.
-            $destinationIsStore = $type === MovementType::TRANSFERENCIA
-                && Warehouse::query()->find($toWarehouseId)?->isStore() === true;
-
             foreach ($data['items'] as $line) {
                 $quantity = (int) $line['quantity'];
                 $productId = (int) $line['product_id'];
+                $salePrice = null;
 
                 if ($type === MovementType::TRANSFERENCIA) {
-                    $salePrice = $destinationIsStore && isset($line['sale_price']) && $line['sale_price'] !== null
+                    // Fase 1: la mercancía solo sale del origen. Entra al destino al
+                    // confirmarse la recepción (transfer_status: en_transito -> recibido).
+                    $this->stockService->lockAndApply($productId, $warehouseId, -abs($quantity));
+                    $salePrice = isset($line['sale_price']) && $line['sale_price'] !== null
                         ? (float) $line['sale_price']
                         : null;
-                    $this->stockService->lockAndApply($productId, $warehouseId, -abs($quantity));
-                    $this->stockService->lockAndApply($productId, (int) $toWarehouseId, abs($quantity), $salePrice);
                 } else {
                     $this->stockService->lockAndApply($productId, $warehouseId, $this->stockDelta($type, $quantity));
                 }
@@ -57,13 +57,14 @@ class MovementService
                     $totals[$key] = $value + $calc[$key];
                 }
 
-                $items[] = ['product_id' => $product->id, 'quantity' => abs($quantity), 'calc' => $calc];
+                $items[] = ['product_id' => $product->id, 'quantity' => abs($quantity), 'sale_price' => $salePrice, 'calc' => $calc];
             }
 
             $movement = Movement::query()->create([
                 'type' => $type,
                 'adjustment_subtype' => $data['adjustment_subtype'] ?? null,
                 'code' => $this->codeGenerator->next($type),
+                'transfer_status' => $type === MovementType::TRANSFERENCIA ? TransferStatus::EN_TRANSITO : null,
                 'warehouse_id' => $warehouseId,
                 'to_warehouse_id' => $toWarehouseId,
                 'exchange_rate_snapshot' => $exchange,
@@ -84,6 +85,7 @@ class MovementService
                 $movement->items()->create([
                     'product_id' => $item['product_id'],
                     'quantity' => $item['quantity'],
+                    'sale_price' => $item['sale_price'],
                     'unit_price_with_tax_usd' => $item['calc']['unit_usd'],
                     'unit_price_with_tax_cup' => $item['calc']['unit_cup'],
                     'subtotal_with_tax_usd' => $item['calc']['with_usd'],
@@ -110,8 +112,11 @@ class MovementService
 
             foreach ($original->items as $item) {
                 if ($original->type === MovementType::TRANSFERENCIA) {
+                    // Siempre se devuelve al origen; solo se descuenta del destino si ya se había recibido.
                     $this->stockService->lockAndApply($item->product_id, $original->warehouse_id, abs($item->quantity));
-                    $this->stockService->lockAndApply($item->product_id, (int) $original->to_warehouse_id, -abs($item->quantity));
+                    if ($original->transfer_status === TransferStatus::RECIBIDO) {
+                        $this->stockService->lockAndApply($item->product_id, (int) $original->to_warehouse_id, -abs($item->quantity));
+                    }
                 } else {
                     $this->stockService->lockAndApply($item->product_id, $original->warehouse_id, -$this->stockDelta($original->type, $item->quantity));
                 }
@@ -152,6 +157,55 @@ class MovementService
             }
 
             return $void;
+        });
+    }
+
+    /**
+     * Confirma la recepción de una transferencia en tránsito: suma el stock en el
+     * almacén destino (con el precio de venta previsto si es tienda) y la marca
+     * como recibida. En un nodo, encola la actualización para subirla al central
+     * aunque la transferencia se haya originado en otro nodo.
+     */
+    public function confirmReception(Movement $movement, User $user): Movement
+    {
+        return DB::transaction(function () use ($movement, $user) {
+            $transfer = Movement::query()->with('items')->whereKey($movement->id)->lockForUpdate()->firstOrFail();
+
+            if ($transfer->type !== MovementType::TRANSFERENCIA) {
+                throw new HttpException(422, 'El movimiento no es una transferencia.');
+            }
+
+            if ($transfer->status === MovementStatus::ANULADO) {
+                throw new HttpException(409, 'La transferencia está anulada.');
+            }
+
+            if ($transfer->transfer_status === TransferStatus::RECIBIDO) {
+                throw new HttpException(409, 'La transferencia ya fue recibida.');
+            }
+
+            $destinationIsStore = Warehouse::query()->find($transfer->to_warehouse_id)?->isStore() === true;
+
+            foreach ($transfer->items as $item) {
+                $salePrice = $destinationIsStore && $item->sale_price !== null ? (float) $item->sale_price : null;
+                $this->stockService->lockAndApply($item->product_id, (int) $transfer->to_warehouse_id, abs($item->quantity), $salePrice);
+            }
+
+            $transfer->forceFill([
+                'transfer_status' => TransferStatus::RECIBIDO,
+                'received_by_user_id' => $user->id,
+                'received_at' => now(),
+            ])->save();
+
+            // La transferencia pudo originarse en otro nodo, por lo que el outbox
+            // (que solo encola origen local) no la incluiría: se encola explícitamente.
+            if (config('sync.role') === 'node') {
+                SyncOutbox::query()->updateOrInsert(
+                    ['entity_type' => 'movement', 'entity_uuid' => $transfer->uuid],
+                    ['queued_at' => now()],
+                );
+            }
+
+            return $transfer;
         });
     }
 

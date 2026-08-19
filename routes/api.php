@@ -6,11 +6,19 @@ use App\Http\Controllers\Api\V1\ConfigController;
 use App\Http\Controllers\Api\V1\MovementController;
 use App\Http\Controllers\Api\V1\ProductController;
 use App\Http\Controllers\Api\V1\ReportController;
+use App\Http\Controllers\Api\V1\SyncController;
+use App\Http\Controllers\Api\V1\SyncLocalController;
 use App\Http\Controllers\Api\V1\UserController;
 use App\Http\Controllers\Api\V1\WarehouseController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/health', fn () => ['status' => 'ok', 'time' => now()->toIso8601String()]);
+
+// Sincronización nodo <-> central (autenticada por token de máquina del nodo).
+Route::prefix('sync')->middleware('sync.node')->group(function () {
+    Route::post('/pull', [SyncController::class, 'pull']);
+    Route::post('/push', [SyncController::class, 'push']);
+});
 
 Route::prefix('auth')->group(function () {
     Route::post('/login', [AuthController::class, 'login']);
@@ -20,6 +28,12 @@ Route::prefix('auth')->group(function () {
         Route::post('/logout', [AuthController::class, 'logout']);
         Route::get('/me', [AuthController::class, 'me']);
     });
+});
+
+// Sincronización local (la dispara el frontend del nodo; auth por JWT de usuario).
+Route::middleware(['auth:api', 'active_user'])->group(function () {
+    Route::get('/sync/status', [SyncLocalController::class, 'status']);
+    Route::post('/sync/run', [SyncLocalController::class, 'run']);
 });
 
 Route::middleware(['auth:api', 'active_user', 'role:admin'])->group(function () {
@@ -91,6 +105,7 @@ Route::middleware(['auth:api', 'active_user', 'warehouse'])->group(function () {
     Route::post('/movements/venta', [MovementController::class, 'venta']);
     Route::post('/movements/ajuste', [MovementController::class, 'ajuste'])->middleware('role:admin');
     Route::post('/movements/transferencia', [MovementController::class, 'transferencia']);
+    Route::post('/movements/{movement}/recibir', [MovementController::class, 'recibir'])->whereNumber('movement');
     Route::post('/movements/{movement}/anular', [MovementController::class, 'anular'])->whereNumber('movement');
 
     Route::get('/dashboard/kpis', [ReportController::class, 'kpis']);

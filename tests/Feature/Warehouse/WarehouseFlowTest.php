@@ -48,18 +48,30 @@ class WarehouseFlowTest extends TestCase
         $this->actingAs($admin, 'api')->withHeaders(['X-Warehouse-Id' => (string) $w2->id])
             ->getJson('/api/v1/products')->assertOk()->assertJsonPath('data.0.quantity', 0);
 
-        // Transfer 4 units from w1 to w2.
-        $this->actingAs($admin, 'api')
+        // Transfer 4 units from w1 to w2 (leaves origin immediately, enters on reception).
+        $transfer = $this->actingAs($admin, 'api')
             ->withHeaders(['X-Warehouse-Id' => (string) $w1->id])
             ->postJson('/api/v1/movements/transferencia', [
                 'to_warehouse_id' => $w2->id,
                 'items' => [['product_id' => $product->id, 'quantity' => 4]],
             ])
             ->assertCreated()
-            ->assertJsonPath('data.to_warehouse.id', $w2->id);
+            ->assertJsonPath('data.to_warehouse.id', $w2->id)
+            ->assertJsonPath('data.transfer_status', 'en_transito');
+        $transferId = $transfer->json('data.id');
 
+        // In transit: origin already down, destination not yet up.
         $this->actingAs($admin, 'api')->withHeaders(['X-Warehouse-Id' => (string) $w1->id])
             ->getJson('/api/v1/products')->assertJsonPath('data.0.quantity', 6);
+        $this->actingAs($admin, 'api')->withHeaders(['X-Warehouse-Id' => (string) $w2->id])
+            ->getJson('/api/v1/products')->assertJsonPath('data.0.quantity', 0);
+
+        // Confirm reception at destination.
+        $this->actingAs($admin, 'api')->withHeaders(['X-Warehouse-Id' => (string) $w2->id])
+            ->postJson("/api/v1/movements/{$transferId}/recibir")
+            ->assertOk()
+            ->assertJsonPath('data.transfer_status', 'recibido');
+
         $this->actingAs($admin, 'api')->withHeaders(['X-Warehouse-Id' => (string) $w2->id])
             ->getJson('/api/v1/products')->assertJsonPath('data.0.quantity', 4);
 
