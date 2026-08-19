@@ -9,6 +9,10 @@ class MovementCodeGenerator
 {
     public function next(MovementType $type): string
     {
+        // Un nodo recién inicializado puede no tener el contador sembrado (movement_counter
+        // no se sincroniza): se crea al vuelo para no fallar al generar el primer código.
+        MovementCounter::query()->firstOrCreate(['type' => $type->value], ['next_value' => 1]);
+
         $counter = MovementCounter::query()->whereKey($type->value)->lockForUpdate()->firstOrFail();
         $value = $counter->next_value;
         $counter->forceFill(['next_value' => $value + 1])->save();

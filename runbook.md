@@ -191,6 +191,10 @@ locales. El almacenero entra al frontend local con sus credenciales del central.
 - *Riesgo:* `SyncClient::pull` avanza el cursor aunque el import falle → los registros que
   fallan se saltan para siempre. Recuperación puntual: borrar `sync_state.pull_seq:*` y
   re-pull (idempotente por uuid). Convendría avanzar el cursor solo hasta lo aplicado.
+- *Crear producto daba 404* ("Recurso no encontrado") en nodo recién creado: al migrar sin
+  seed, `movement_counter` queda vacío y `MovementCodeGenerator::next()` hacía `firstOrFail`.
+  Fix: ahora hace `firstOrCreate(next_value=1)` (auto-repara). `movement_counter` NO se
+  sincroniza, es local del nodo. **Pendiente commitear/desplegar a central + demás laptops.**
 
 **Nota:** hoy la auto-sync la dispara solo el navegador (cada 5 min + evento `online`). Para
 sync de fondo con el navegador cerrado, agendar `sync:run` en el scheduler + tarea de Windows.
