@@ -41,12 +41,15 @@ class SyncRun extends Command
                 $this->info('Subida: '.($result === [] ? 'nada pendiente' : json_encode($result)));
 
                 $media = $client->pushMedia();
-                $this->info('Imágenes: '.($media === [] ? 'nada que subir' : json_encode($media)));
+                $this->info('Imágenes (subida): '.($media === [] ? 'nada que subir' : json_encode($media)));
             }
 
             if ($doPull) {
                 $result = $client->pull();
                 $this->info('Bajada: '.($result === [] ? 'sin cambios' : json_encode($result)));
+
+                $mediaDown = $client->pullMedia();
+                $this->info('Imágenes (bajada): '.($mediaDown === [] ? 'nada que bajar' : json_encode($mediaDown)));
             }
         } catch (\Throwable $e) {
             $this->error('No se pudo sincronizar con el central: '.$e->getMessage());

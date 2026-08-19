@@ -2,6 +2,7 @@
 
 namespace App\Services\Sync;
 
+use App\Models\Product;
 use App\Models\Setting;
 use App\Models\SyncOutbox;
 use Illuminate\Http\Client\PendingRequest;
@@ -156,6 +157,39 @@ class SyncClient
         }
 
         return $uploaded > 0 ? ['images' => $uploaded] : [];
+    }
+
+    /**
+     * Baja del central los archivos de imagen (product.image) que este nodo tenga
+     * referenciados en BD pero no en disco. Se descargan del `/storage` público del
+     * central (mismo path). Idempotente: no re-baja lo que ya existe localmente.
+     *
+     * @return array<string, int>  cantidad de imágenes bajadas
+     */
+    public function pullMedia(): array
+    {
+        $missing = Product::query()->withoutGlobalScopes()
+            ->whereNotNull('image')->where('image', '!=', '')
+            ->pluck('image')->unique()
+            ->reject(fn ($path) => Storage::disk('public')->exists($path))
+            ->values();
+
+        if ($missing->isEmpty()) {
+            return [];
+        }
+
+        $base = rtrim((string) config('sync.central_url'), '/');
+        $downloaded = 0;
+
+        foreach ($missing as $path) {
+            $response = Http::timeout(30)->get($base.'/storage/'.ltrim($path, '/'));
+            if ($response->successful() && $response->body() !== '') {
+                Storage::disk('public')->put($path, $response->body());
+                $downloaded++;
+            }
+        }
+
+        return $downloaded > 0 ? ['images' => $downloaded] : [];
     }
 
     /**

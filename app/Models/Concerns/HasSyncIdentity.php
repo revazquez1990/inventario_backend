@@ -54,6 +54,14 @@ trait HasSyncIdentity
                 return; // Registro bajado del central: no se reenvía.
             }
 
+            // Solo se encolan entidades que el nodo realmente sube (up/both). Una
+            // entidad 'down' (p.ej. exchange_rate) creada localmente no puede subir
+            // y quedaría atascada para siempre en el outbox ("N por subir" eterno).
+            $direction = config('sync.entities.'.$model->getTable().'.direction');
+            if (! in_array($direction, ['up', 'both'], true)) {
+                return;
+            }
+
             SyncOutbox::query()->updateOrInsert(
                 ['entity_type' => $model->getTable(), 'entity_uuid' => $model->uuid],
                 ['queued_at' => now()],

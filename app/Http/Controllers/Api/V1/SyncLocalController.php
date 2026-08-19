@@ -49,14 +49,19 @@ class SyncLocalController extends Controller
 
         try {
             $pushed = $client->push();
+            $mediaUp = $client->pushMedia();
             $pulled = $client->pull();
-            $media = $client->pushMedia();
+            $mediaDown = $client->pullMedia();
         } catch (\Throwable $e) {
             return response()->json([
                 'error' => ['code' => 'SYNC_FAILED', 'message' => 'No se pudo sincronizar con el central: '.$e->getMessage()],
             ], 502);
         }
 
-        return response()->json(['data' => ['pushed' => $pushed, 'pulled' => $pulled, 'media' => $media]]);
+        return response()->json(['data' => [
+            'pushed' => $pushed,
+            'pulled' => $pulled,
+            'media' => ['up' => $mediaUp, 'down' => $mediaDown],
+        ]]);
     }
 }
