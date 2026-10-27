@@ -259,6 +259,56 @@ class ReportController extends Controller
     }
 
     /**
+     * Excel report: inventory valuation. One row per product with stock in the
+     * active scope — unit price, quantity and line total (price * quantity) —
+     * plus a final row that carries only the grand total invested, in USD.
+     */
+    public function inventoryValue(Request $request)
+    {
+        $warehouseIds = $this->resolvedWarehouseIds($request);
+
+        // Current stock per product in the active scope.
+        $stock = DB::table('product_warehouse')
+            ->when($warehouseIds !== [], fn ($q) => $q->whereIn('warehouse_id', $warehouseIds))
+            ->groupBy('product_id')
+            ->selectRaw('product_id, SUM(quantity) as qty')
+            ->pluck('qty', 'product_id');
+
+        $rows = [];
+        $grandTotal = 0.0;
+
+        foreach (Product::query()->orderBy('name')->get(['id', 'name', 'price']) as $product) {
+            $qty = (int) ($stock[$product->id] ?? 0);
+            if ($qty <= 0) {
+                continue; // Only products with stock in the active scope.
+            }
+            $price = (float) $product->price;
+            $total = $price * $qty;
+            $grandTotal += $total;
+            $rows[] = [
+                'Producto' => $product->name,
+                'Precio' => number_format($price, 2, '.', ''),
+                'Cantidad' => $qty,
+                'Total' => number_format($total, 2, '.', ''),
+            ];
+        }
+
+        // Final row: only the grand total invested, in USD.
+        $rows[] = [
+            'Producto' => 'TOTAL',
+            'Precio' => '',
+            'Cantidad' => '',
+            'Total' => number_format($grandTotal, 2, '.', ''),
+        ];
+
+        $format = $request->string('format', 'xlsx')->lower()->toString();
+
+        // Anchos (en caracteres de Excel): Producto bien ancho para los nombres,
+        // Precio y Total holgados para que no se corten los montos.
+        return $this->export('inventario_valorizado', ['Producto', 'Precio', 'Cantidad', 'Total'], $rows, $format, [42, 16, 12, 18]);
+    }
+
+    /**
      * @param  array<string, mixed>  $v
      * @return array{0: Carbon, 1: Carbon, 2: string}
      */
@@ -296,12 +346,12 @@ class ReportController extends Controller
         };
     }
 
-    private function export(string $name, array $headers, array $rows, string $format)
+    private function export(string $name, array $headers, array $rows, string $format, array $colWidths = [])
     {
         $normalizedRows = array_map(fn ($row) => array_map('strval', is_array($row) ? $row : (array) $row), $rows);
 
         return match ($format) {
-            'xlsx' => $this->xlsx($name, $headers, $normalizedRows),
+            'xlsx' => $this->xlsx($name, $headers, $normalizedRows, $colWidths),
             'pdf' => $this->pdf($name, $headers, $normalizedRows),
             default => $this->csv($name, $headers, $normalizedRows),
         };
@@ -322,7 +372,7 @@ class ReportController extends Controller
         ]);
     }
 
-    private function xlsx(string $name, array $headers, array $rows)
+    private function xlsx(string $name, array $headers, array $rows, array $colWidths = [])
     {
         $tmp = tempnam(sys_get_temp_dir(), 'xlsx');
         $zip = new ZipArchive();
@@ -340,7 +390,16 @@ class ReportController extends Controller
             }
             $sheetRows .= '</row>';
         }
-        $zip->addFromString('xl/worksheets/sheet1.xml', '<?xml version="1.0" encoding="UTF-8"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>'.$sheetRows.'</sheetData></worksheet>');
+        $colsXml = '';
+        if ($colWidths !== []) {
+            $colsXml = '<cols>';
+            foreach (array_values($colWidths) as $i => $w) {
+                $n = $i + 1;
+                $colsXml .= '<col min="'.$n.'" max="'.$n.'" width="'.(float) $w.'" customWidth="1"/>';
+            }
+            $colsXml .= '</cols>';
+        }
+        $zip->addFromString('xl/worksheets/sheet1.xml', '<?xml version="1.0" encoding="UTF-8"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'.$colsXml.'<sheetData>'.$sheetRows.'</sheetData></worksheet>');
         $zip->close();
 
         return response()->download($tmp, "{$name}.xlsx", ['Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'])->deleteFileAfterSend(true);
